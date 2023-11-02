@@ -31,24 +31,24 @@ def create_parser():
 
     #Redshift samples
     parser.add_argument('--nz',
-        default=1000,
+        default=400,
         metavar='nz',
         type=int,
         help='Number of redshift samples (default: 1000)')
 
     #Minimum log L
     parser.add_argument('--loglmin',
-        default=15/2.5,
+        default=16/2.5,
         metavar='loglmin',
         type=float,
-        help=f'Minimum log luminosity to model (default: {15/2.5})')
+        help=f'Minimum log luminosity (absolute maggies) to model (default: {15/2.5})')
 
     #Maximum log L
     parser.add_argument('--loglmax',
-        default=22/2.5,
+        default=24/2.5,
         metavar='loglmax',
         type=float,
-        help=f'Maximum log luminosity to model (default: {22/2.5})')
+        help=f'Maximum log luminosity (absolute maggies) to model (default: {22/2.5})')
 
     #Luminosity samples
     parser.add_argument('--nl',
@@ -69,12 +69,17 @@ def create_parser():
 #########################################
 # Schechter function in log_10 L
 #########################################
-def schechter(logl, logphi, loglstar, alpha, l_min=None):
+def log_schechter(logl, logphi, loglstar, alpha, l_min=None):
     """
     Generate a Schechter function (in dlogl).
     """
     phi = ((10**logphi) * np.log(10) * 10**((logl - loglstar) * (alpha + 1)) * np.exp(-10**(logl - loglstar)))
     return phi
+
+
+def lum_to_mag(logl, zred):
+    mag = -2.5 * logl + cosmo.distmod(zred).value
+    return mag
 
 
 class EvolvingSchechter:
@@ -105,16 +110,21 @@ class EvolvingSchechter:
         self.alpha = np.dot(np.vander(zz, len(self._alphas)), self._alphas)
         # print(f'self.phi.shape {self.phi.shape}')
 
-    def evaluate(self, L, z):
+    def evaluate(self, L, z, grid=True, in_dlogl=False):
         self.set_redshift(z)
-        x = (L / self.lstar)
-        return self.phi * x**self.alpha * np.exp(-x)
+        if grid:
+            x = (L[:, None] / self.lstar)
+        else:
+            x = (L / self.lstar)
+        if in_dlogl:
+            factor = np.log(10)
+        else:
+            factor = 1
+        return factor * self.phi * x**(self.alpha + int(in_dlogl)) * np.exp(-x)
 
-
-    # record the LF parameter evolution
-    # to an ascii table
     def record_parameter_evolution(self, zgrid):
-
+        """record the LF parameter evolution to an ascii table
+        """
         # set the redshift evolution
         # of LF parameters
         self.set_redshift(zgrid)
@@ -127,9 +137,9 @@ class EvolvingSchechter:
         t['alpha'] = self.alpha
         t.write('lf_parameter_evolution.txt', format='ascii', overwrite=True)
 
-    # record the LF evolution to
-    # a fits image
     def record_lf_evolution(self, lgrid, zgrid):
+        """record the LF evolution to a fits image
+        """
         # get the LF grid
         lf = self.evaluate(lgrid, zgrid)
 
@@ -149,8 +159,9 @@ class EvolvingSchechter:
         hdul = fits.HDUList([phdu, zhdu, lhdu, lfhdu])
         hdul.writeto('lf_evolution.fits', overwrite=True)
 
-    # plot the LF evolution
     def plot_lf_evolution(self, lgrid, zgrid):
+        """plot the LF evolution
+        """
         # get the LF grid
         lf = self.evaluate(lgrid, zgrid)
 
@@ -168,28 +179,47 @@ class EvolvingSchechter:
         plt.savefig('lf_evolution.png', bbox_inches='tight', facecolor='white')
 
 
-#########################################
+# ------------------------------
 # sigmoid to model completeness
-#########################################
+# ------------------------------
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
 
-#########################################
+# ------------------------------
 # Effective volume vs. z and mag
-#########################################
-def effective_volume(mag, zgrid, lgrid, omega, mag_50=30, dc=1):
+# ------------------------------
+def effective_volume(loglgrid, zgrid, omega,
+                     completeness_kwargs={},
+                     selection_kwargs={}):
     """compute this on a grid of z and Muv
+
+    Returns
+    -------
+    dV_dz : array of shape N_lum, Nz
+       Effective volume in each luminosity and redshift bin.  This is the
+       differential volume in Mpc^3/redshift, multiplied by the probability of
+       an object at that luminsity and redshift being in the catalog.
     """
+    # dV/dz (Mpc^3/redshift)
     volume = omega * cosmo.differential_comoving_volume(zgrid).value
-    muv = lgrid + cosmo.distmod(zgrid).value
-    completeness_function = sigmoid((mag_50 - muv) / dc)  # fake completeness function
-    selection_function = completeness_function * 1.0
+    muv = lum_to_mag(loglgrid[:, None], zgrid)
+    # fake completeness function
+    completeness = completeness_function(muv, **completeness_kwargs)
+    # fake selection function
+    selection_function = completeness * (muv < 31)
 
-    return selection_function * volume, zgrid, lgrid
+    return selection_function * volume
 
-#########################################
+# --------------------
+# --- Completeness ---
+# --------------------
+def completeness_function(mag, mag_50=30, dc=0.5):
+    completeness = sigmoid((mag_50 - mag) / dc)
+    return completeness
+
+# ------------------------
 # Log likelihood L(data|q)
-#########################################
+# ------------------------
 def lnlike(q, data, effective_volume):
     veff, zgrid, Muv_grid = effective_volume
     lgrid = 10**(-0.4 * Muv_grid)  # units are now absolute maggies
@@ -207,12 +237,31 @@ def lnlike(q, data, effective_volume):
     return np.sum(lnlike) - np.log(N_theta)
 
 
+# ------------------------------
+# Sample from a 2d hitogram
+# ------------------------------
+def sample_twod(X, Y, Z, n_sample=1000):
+
+    sflat = Z.flatten()
+    sind = np.arange(len(sflat))
+    inds = np.random.choice(sind, size=n_sample,
+                            p=sflat / np.nansum(sflat))
+    # TODO: chack x, y order here
+    N = len(np.squeeze(Y))
+    xx = inds // N
+    yy = np.mod(inds, N)
+
+    y = np.squeeze(Y)[yy]
+    x = np.squeeze(X)[xx]
+    return x, y
+
+
 ########################
 # The main function
 ########################
 #def main():
 if __name__ == "__main__":
-    
+
     # create the command line argument parser
     parser = create_parser()
 
@@ -220,59 +269,55 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # grid of redshifts
-    zgrid = np.linspace(args.zmin, args.zmax, args.nz)[None, :]
+    zgrid = np.linspace(args.zmin, args.zmax, args.nz)
 
     # grid of log luminosity
-    loglgrid = np.linspace(args.loglmin, args.loglmax, args.nl)[:, None]
+    loglgrid = np.linspace(args.loglmin, args.loglmax, args.nl)
 
     # luminosity
     lgrid = 10**loglgrid
 
+    # absolute magnitude
+    Muvgrid = -2.5 * loglgrid
+
     # initialize evolving schechter
     # q_true = np.array([0.0, 0.0, 1e-3, 0, 0, 10**(18 / 2.5), -1.5])
-    q_true = np.array([0.0, -1.0e-4, 1e-3, 0, 0, 10**(18 / 2.5), -1.5])
+    q_true = np.array([0.0, -1.0e-4, 1e-3, 0, 0, 10**(21 / 2.5), -1.5])
     s = EvolvingSchechter()
     s.set_parameters(q_true)
 
     # write the parameter evolution to a file
     if (args.verbose):
         print('Recording parameter evolution with redshift...')
-    s.record_parameter_evolution(zgrid[0])
+    s.record_parameter_evolution(zgrid)
 
     # write the evolving luminosity function
     # to a binary file
     if (args.verbose):
         print('Writing luminosity function evolution to file...')
-    s.record_lf_evolution(lgrid, zgrid[0])
+    s.record_lf_evolution(lgrid, zgrid)
 
     # plot the luminosity function evolution
     # and save as a png
     if (args.verbose):
         print('Plotting luminosity function evolution...')
-    s.plot_lf_evolution(lgrid, zgrid[0])
-
-    # schechter function evaluated on a grid of z and L
-    schechter = s.evaluate(lgrid, zgrid[0])
+    s.plot_lf_evolution(lgrid, zgrid)
 
     # sampling
-    ns = 1000
-    sflat = schechter.flatten()
-    sind = np.arange(len(sflat))
-    inds = np.random.choice(sind, p=sflat/np.nansum(sflat), size=ns)
-    xx = inds // args.nz
-    yy = np.mod(inds, args.nz)
-    zs = zgrid[0][yy]
-    loglums = loglgrid[xx]
-
-    #plt.ion()
+    if (args.verbose):
+        print('sampling from the LF...')
+    lf = s.evaluate(lgrid, zgrid)
+    loglums, zs = sample_twod(loglgrid, zgrid, lf, n_sample=1000)
     fig, ax = plt.subplots()
-    ax.imshow(np.log10(schechter), origin="lower", cmap="Blues", alpha=0.4,
-              extent=[zgrid.min(), zgrid.max(), loglgrid.min(), loglgrid.max()])
-    ax.plot(zs, loglums, "o", color="red", label="samples")
-    ax.set_ylim(args.loglmin, args.loglmax)
+    ax.imshow(np.log10(lf), origin="lower", cmap="Blues", alpha=0.4,
+              extent=[zgrid.min(), zgrid.max(), Muvgrid.max(), Muvgrid.min()],
+              aspect="auto")
+    ax.plot(zs, -2.5 * loglums, "o", color="red", label="samples")
+    ax.set_ylim(-2.5*args.loglmin, -2.5*args.loglmax)
     ax.set_xlabel("redshift")
-    ax.set_ylabel("log L")
+    ax.set_ylabel(r"M$_{\rm UV}$")
     fig.savefig("lf_samples.png")
+
     #done!
     print('Done!')
 
