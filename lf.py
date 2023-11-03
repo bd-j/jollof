@@ -5,6 +5,7 @@ from matplotlib import colormaps
 from astropy.cosmology import Planck15 as cosmo
 from astropy.table import Table
 from astropy.io import fits
+from astropy.units import arcmin
 
 #########################################
 # Routine to parse command line arguments
@@ -303,13 +304,35 @@ if __name__ == "__main__":
         print('Plotting luminosity function evolution...')
     s.plot_lf_evolution(lgrid, zgrid)
 
-    # sampling
+    # sample LF
     if (args.verbose):
         print('sampling from the LF...')
     lf = s.evaluate(lgrid, zgrid)
     loglums, zs = sample_twod(loglgrid, zgrid, lf, n_sample=1000)
     fig, ax = plt.subplots()
-    ax.imshow(np.log10(lf), origin="lower", cmap="Blues", alpha=0.4,
+    ax.imshow(np.log10(lf), origin="lower", cmap="Blues", alpha=0.5,
+              extent=[zgrid.min(), zgrid.max(), Muvgrid.max(), Muvgrid.min()],
+              aspect="auto")
+    ax.plot(zs, -2.5 * loglums, "o", color="red", label="samples")
+    ax.set_ylim(-2.5*args.loglmin, -2.5*args.loglmax)
+    ax.set_xlabel("redshift")
+    ax.set_ylabel(r"M$_{\rm UV}$")
+    fig.savefig("lf_samples.png")
+
+    # sample number counts
+    if (args.verbose):
+        print('sampling from the number counts...')
+    omega = 2 * ((2 * arcmin) * (2 * arcmin)).to("steradian").value
+    lf = s.evaluate(lgrid, zgrid, in_dlogl=True)
+    veff = effective_volume(loglgrid, zgrid, omega)
+    dN_dz_dlogl = lf * veff
+    dN = dN_dz_dlogl * np.gradient(zgrid) * np.gradient(loglgrid)[:, None]
+    N_bar = dN.sum()
+    N = np.random.poisson(N_bar, size=1)[0]
+    print(f"Drew {N} galaxies from expected total of {N_bar}")
+    loglums, zs = sample_twod(loglgrid, zgrid, dN, n_sample=N)
+    fig, ax = plt.subplots()
+    ax.imshow(dN, origin="lower", cmap="Blues", alpha=0.5,
               extent=[zgrid.min(), zgrid.max(), Muvgrid.max(), Muvgrid.min()],
               aspect="auto")
     ax.plot(zs, -2.5 * loglums, "o", color="red", label="samples")

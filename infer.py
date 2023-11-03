@@ -30,7 +30,7 @@ def make_mock(loglgrid, zgrid, omega,
 
     if noisy:
         ll, zz = np.meshgrid(loglgrid, zgrid)
-        ff = 10**(-0.4 * lum_to_mag(ll, zz))
+        ff = 10**(-0.4 * lum_to_mag(loglgrid[:, None], zgrid))
         data = []
         for logl, zred in zip(logl_true, zred_true):
             lnp = add_noise(logl, zred, ff, zz,
@@ -48,8 +48,7 @@ def add_noise(logl, zred, ff, zz,
               sigma_flux=1/maggies_to_nJy,
               sigma_logz=0.1):
 
-    mag = lum_to_mag(logl, zred)
-    flux = 10**(-0.4 * mag)
+    flux = 10**(-0.4 * lum_to_mag(logl, zred))
     sigma_z = sigma_logz * (1 + zred)
     lnp = -0.5*((flux - ff)/sigma_flux)**2 - 0.5 * ((zred - zz)/sigma_z)**2
     lnp = lnp / lnp.sum()
