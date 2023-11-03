@@ -58,6 +58,19 @@ def create_parser():
         type=int,
         help='Number of luminosity samples (default: 1000)')
 
+    parser.add_argument('--lf_params',
+        nargs='+',
+        default=[0.0, 0.0, 1e-3, 0, 0, 10**(21 / 2.5), -1.5],
+        type=float,
+        help='list of aperture diameters (in arcsec)')
+
+    #Area in arcmin^2
+    parser.add_argument('--area',
+        default= 9.05,
+        metavar='area',
+        type=float,
+        help=f'Area in arcmin^2 (default: 9.05)')
+
     #Verbosity
     parser.add_argument('-v', '--verbose',
         dest='verbose',
@@ -77,7 +90,9 @@ def log_schechter(logl, logphi, loglstar, alpha, l_min=None):
     phi = ((10**logphi) * np.log(10) * 10**((logl - loglstar) * (alpha + 1)) * np.exp(-10**(logl - loglstar)))
     return phi
 
-
+#########################################
+# Convert luminosity to magnitude
+#########################################
 def lum_to_mag(logl, zred):
     mag = -2.5 * logl + cosmo.distmod(zred).value -2.5*np.log10(1+zred)
     return mag
@@ -160,11 +175,11 @@ class EvolvingSchechter:
         hdul = fits.HDUList([phdu, zhdu, lhdu, lfhdu])
         hdul.writeto('lf_evolution.fits', overwrite=True)
 
-    def plot_lf_evolution(self, lgrid, zgrid):
+    def plot_lf_evolution(self, lgrid, zgrid, in_dlogl=False):
         """plot the LF evolution
         """
         # get the LF grid
-        lf = self.evaluate(lgrid, zgrid)
+        lf = self.evaluate(lgrid, zgrid, in_dlogl=in_dlogl)
         x = -2.5 * np.log10(lgrid)
 
         # make a figure
@@ -173,11 +188,14 @@ class EvolvingSchechter:
         for i in range(len(zgrid)):
             izg = (zgrid[i] - zgrid[0]) / (zgrid[-1] - zgrid[0])
             ax.plot(x, lf[:, i], color=cmap(izg))
-        ax.set_xlim([x[0], x[-1]])
-        ax.set_ylim([1.0e-7, 1])
+#        ax.set_xlim([x[0], x[-1]])
+#        ax.set_ylim([1.0e-7, 1])
+        ax.set_xlim([-23,-18])  #ouchi 2009 fig 7
+        ax.set_ylim([4e-7,1e-2])  #ouchi 2009 fig 7
         ax.set_xlabel(r'M$_{\rm UV}$')
         ax.set_ylabel(r'$\phi(L)$')
         ax.set_yscale('log')
+        ax.tick_params(which='both', direction='in', right=True)
         plt.savefig('lf_evolution.png', bbox_inches='tight', facecolor='white')
 
 
@@ -240,7 +258,7 @@ def lnlike(q, data, effective_volume):
 
 
 # ------------------------------
-# Sample from a 2d hitogram
+# Sample from a 2d histogram
 # ------------------------------
 def sample_twod(X, Y, Z, n_sample=1000):
 
@@ -248,7 +266,7 @@ def sample_twod(X, Y, Z, n_sample=1000):
     sind = np.arange(len(sflat))
     inds = np.random.choice(sind, size=n_sample,
                             p=sflat / np.nansum(sflat))
-    # TODO: chack x, y order here
+    # TODO: check x, y order here
     N = len(np.squeeze(Y))
     xx = inds // N
     yy = np.mod(inds, N)
@@ -284,7 +302,10 @@ if __name__ == "__main__":
 
     # initialize evolving schechter
     # q_true = np.array([0.0, 0.0, 1e-3, 0, 0, 10**(18 / 2.5), -1.5])
-    q_true = np.array([0.0, -1.0e-4, 1e-3, 0, 0, 10**(21 / 2.5), -1.5])
+    print(args.lf_params)
+    #exit()
+    #q_true = np.array([0.0, -1.0e-4, 1e-3, 0, 0, 10**(21 / 2.5), -1.5])
+    q_true = np.array(args.lf_params)
     s = EvolvingSchechter()
     s.set_parameters(q_true)
 
@@ -303,7 +324,7 @@ if __name__ == "__main__":
     # and save as a png
     if (args.verbose):
         print('Plotting luminosity function evolution...')
-    s.plot_lf_evolution(lgrid, zgrid)
+    s.plot_lf_evolution(lgrid, zgrid, in_dlogl=True)
 
     # sample LF
     if (args.verbose):
@@ -323,7 +344,7 @@ if __name__ == "__main__":
     # sample number counts
     if (args.verbose):
         print('sampling from the number counts...')
-    omega = 2 * ((2 * arcmin) * (2 * arcmin)).to("steradian").value
+    omega = (args.area * arcmin**2).to("steradian").value
     lf = s.evaluate(lgrid, zgrid, in_dlogl=True)
     veff = effective_volume(loglgrid, zgrid, omega)
     dN_dz_dlogl = lf * veff
