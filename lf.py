@@ -42,14 +42,14 @@ def create_parser():
         default=16/2.5,
         metavar='loglmin',
         type=float,
-        help=f'Minimum log luminosity (absolute maggies) to model (default: {15/2.5})')
+        help=f'Minimum log luminosity (absolute maggies) to model (default: {16/2.5})')
 
     #Maximum log L
     parser.add_argument('--loglmax',
         default=24/2.5,
         metavar='loglmax',
         type=float,
-        help=f'Maximum log luminosity (absolute maggies) to model (default: {22/2.5})')
+        help=f'Maximum log luminosity (absolute maggies) to model (default: {24/2.5})')
 
     #Luminosity samples
     parser.add_argument('--nl',
@@ -58,6 +58,7 @@ def create_parser():
         type=int,
         help='Number of luminosity samples (default: 1000)')
 
+    #Evovling luminosity function parameters
     parser.add_argument('--lf_params',
         nargs='+',
         default=[0.0, 0.0, 1e-3, 0, 0, 10**(21 / 2.5), -1.5],
@@ -70,6 +71,13 @@ def create_parser():
         metavar='area',
         type=float,
         help=f'Area in arcmin^2 (default: 9.05)')
+
+    #Complete
+    parser.add_argument('--complete',
+        dest='complete',
+        action='store_true',
+        help='Model LF as complete? (default: False)',
+        default=False)
 
     #Verbosity
     parser.add_argument('-v', '--verbose',
@@ -225,6 +233,9 @@ def effective_volume(loglgrid, zgrid, omega,
     muv = lum_to_mag(loglgrid[:, None], zgrid)
     # fake completeness function
     completeness = completeness_function(muv, **completeness_kwargs)
+
+    #print(f'Completeness {completeness.shape} {completeness[0]}')
+
     # fake selection function
     selection_function = completeness * (muv < 31)
 
@@ -233,7 +244,13 @@ def effective_volume(loglgrid, zgrid, omega,
 # --------------------
 # --- Completeness ---
 # --------------------
-def completeness_function(mag, mag_50=30, dc=0.5):
+def completeness_function(mag, mag_50=30, dc=0.5, flag_complete=False):
+
+    #pretend we're completely complete
+    if(flag_complete):
+        return np.ones_like(mag)
+
+    #return a completeness vs. magnitude
     completeness = sigmoid((mag_50 - mag) / dc)
     return completeness
 
@@ -287,6 +304,17 @@ if __name__ == "__main__":
 
     # store the command line arguments
     args = parser.parse_args()
+
+    #output command line arguments
+    if(args.verbose):
+        print(f'Minimum redshift: {args.zmin}')
+        print(f'Maximum redshift: {args.zmax}')
+        print(f'Number of z bins: {args.nz}')
+        print(f'Minimum log l   : {args.loglmin}')
+        print(f'Maximum log l   : {args.loglmax}')
+        print(f'Number of l bins: {args.nl}')
+        print(f'Area in arcmin^2: {args.area}')
+        print(f'Fully complete? : {args.complete}')
 
     # grid of redshifts
     zgrid = np.linspace(args.zmin, args.zmax, args.nz)
@@ -346,10 +374,25 @@ if __name__ == "__main__":
         print('sampling from the number counts...')
     omega = (args.area * arcmin**2).to("steradian").value
     lf = s.evaluate(lgrid, zgrid, in_dlogl=True)
-    veff = effective_volume(loglgrid, zgrid, omega)
+    completeness_kwargs = {'flag_complete':args.complete}
+    veff = effective_volume(loglgrid, zgrid, omega, completeness_kwargs)
     dN_dz_dlogl = lf * veff
+    dV_dz = veff
+
     dN = dN_dz_dlogl * np.gradient(zgrid) * np.gradient(loglgrid)[:, None]
-    N_bar = dN.sum()
+    dV = dV_dz[0,:] * np.gradient(zgrid) 
+
+    N_bar = dN.sum()  #Average number of galaxies in survey
+    V_bar = dV.sum()  #Effective volume of the survey in Mpc^3
+
+    if(args.verbose):
+        print(f'Area in arcmin^2 = {args.area}')
+        print(f'Area in steraidians = {omega}')
+        print(f'Cosmology: h = {cosmo.h}, Omega_m = {cosmo.Om0}')
+        print(f'Effective volume = {V_bar} [Mpc^3].')
+        print(f'Number density = {N_bar/V_bar} [Mpc^-3]')
+
+
     N = np.random.poisson(N_bar, size=1)[0]
     print(f"Drew {N} galaxies from expected total of {N_bar}")
     loglums, zs = sample_twod(loglgrid, zgrid, dN, n_sample=N)
