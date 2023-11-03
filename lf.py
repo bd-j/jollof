@@ -79,7 +79,7 @@ def log_schechter(logl, logphi, loglstar, alpha, l_min=None):
 
 
 def lum_to_mag(logl, zred):
-    mag = -2.5 * logl + cosmo.distmod(zred).value
+    mag = -2.5 * logl + cosmo.distmod(zred).value -2.5*np.log10(1+zred)
     return mag
 
 
@@ -165,16 +165,17 @@ class EvolvingSchechter:
         """
         # get the LF grid
         lf = self.evaluate(lgrid, zgrid)
+        x = -2.5 * np.log10(lgrid)
 
         # make a figure
         cmap = colormaps.get_cmap('turbo')
         f, ax = plt.subplots(1, 1, figsize=(7, 7))
         for i in range(len(zgrid)):
             izg = (zgrid[i] - zgrid[0]) / (zgrid[-1] - zgrid[0])
-            ax.plot(np.log10(lgrid), lf[:, i], color=cmap(izg))
-        ax.set_xlim([np.log10(lgrid[0]), np.log10(lgrid[-1])])
+            ax.plot(x, lf[:, i], color=cmap(izg))
+        ax.set_xlim([x[0], x[-1]])
         ax.set_ylim([1.0e-7, 1])
-        ax.set_xlabel('log10 Luminosity')
+        ax.set_xlabel(r'M$_{\rm UV}$')
         ax.set_ylabel(r'$\phi(L)$')
         ax.set_yscale('log')
         plt.savefig('lf_evolution.png', bbox_inches='tight', facecolor='white')

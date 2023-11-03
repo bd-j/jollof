@@ -24,9 +24,14 @@ def make_mock(loglgrid, zgrid, omega,
     veff = effective_volume(loglgrid, zgrid, omega,
                             completeness_kwargs=completeness_kwargs,
                             selection_kwargs=selection_kwargs)
-    density = lf * veff
-    logl_true, zred_true = sample_twod(loglgrid, zgrid, density,
-                                       n_sample=n_sample)
+
+    dN_dz_dlogl = lf * veff
+    dN = dN_dz_dlogl * np.gradient(zgrid) * np.gradient(loglgrid)[:, None]
+    N_bar = dN.sum()
+    N = np.random.poisson(N_bar, size=1)[0]
+
+    logl_true, zred_true = sample_twod(loglgrid, zgrid, dN,
+                                       n_sample=N)
 
     if noisy:
         ll, zz = np.meshgrid(loglgrid, zgrid)
