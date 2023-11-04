@@ -2,6 +2,7 @@ import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import colormaps
+from scipy.interpolate import RegularGridInterpolator
 from astropy.cosmology import Planck15 as cosmo
 from astropy.table import Table
 from astropy.io import fits
@@ -99,11 +100,16 @@ def log_schechter(logl, logphi, loglstar, alpha, l_min=None):
     return phi
 
 #########################################
-# Convert luminosity to magnitude
+# Convert luminosity to magnitude and vice versa
 #########################################
 def lum_to_mag(logl, zred):
     mag = -2.5 * logl + cosmo.distmod(zred).value - 2.5*np.log10(1+zred)
     return mag
+
+
+def mag_to_lum(mag, zred):
+    logl = -0.4 * (mag - cosmo.distmod(zred).value + 2.5*np.log10(1+zred))
+    return logl
 
 
 class EvolvingSchechter:
@@ -159,6 +165,19 @@ class EvolvingSchechter:
         else:
             factor = 1
         return factor * self.phi * x**(self.alpha + int(in_dlogl)) * np.exp(-x)
+
+    def integrated_lf(self, z=None, q=None):
+        """Compute the integrated UV luminsoty density above lmin as a function
+        of redshift
+
+        Returns
+        -------
+        L/Mpc^3/z
+        """
+        if q is not None:
+            self.set_parameters(q)
+        self.set_redshift(z)
+        raise(NotImplementedError)
 
     def record_parameter_evolution(self, zgrid):
         """record the LF parameter evolution to an ascii table
@@ -219,6 +238,22 @@ class EvolvingSchechter:
         plt.savefig('lf_evolution.png', bbox_inches='tight', facecolor='white')
 
 
+class EffectiveVolumeGrid:
+    """Thin wrapper on RegularGridInterpolator that keeps track of the grid points and grid values
+    """
+    def __init__(self, loglgrid, zgrid, veff):
+        self.values = veff
+        self.loglgrid = loglgrid
+        self.zgrid = zgrid
+        self.interp = RegularGridInterpolator((loglgrid, zgrid), veff)
+
+    def __call__(self, *args, **kwargs):
+        return self.interp(*args, **kwargs)
+
+    @property
+    def data(self):
+        return self.values
+
 # ------------------------------
 # sigmoid to model completeness
 # ------------------------------
@@ -230,7 +265,8 @@ def sigmoid(x):
 # ------------------------------
 def effective_volume(loglgrid, zgrid, omega,
                      completeness_kwargs={},
-                     selection_kwargs={}):
+                     selection_kwargs={},
+                     as_interpolator=True):
     """compute this on a grid of z and Muv
 
     Returns
@@ -251,7 +287,11 @@ def effective_volume(loglgrid, zgrid, omega,
     # fake selection function
     selection_function = completeness * (muv < 31)
 
-    return selection_function * volume
+    veff = selection_function * volume
+    if as_interpolator:
+        veff = EffectiveVolumeGrid((loglgrid, zgrid), veff)
+
+    return veff
 
 # --------------------
 # --- Completeness ---
@@ -269,18 +309,30 @@ def completeness_function(mag, mag_50=30, dc=0.5, flag_complete=False):
 # ------------------------
 # Log likelihood L(data|q)
 # ------------------------
-def lnlike(q, data, effective_volume):
-    veff, zgrid, Muv_grid = effective_volume
-    lgrid = 10**(-0.4 * Muv_grid)  # units are now absolute maggies
-    s = EvolvingSchechter()
-    s.set_parameters(q)
+def lnlike(q, data, lf, effective_volume):
+    """
+    Parameters
+    ----------
+    q : ndarray
+        LF parameters
 
+    data : list of dicts
+        One dict for each object.  The dictionary should have the keys
+        'log_samples' and 'zred_samples'
+
+    lf : instance of EvolvingSchecter
+
+    effective_volume : instance of EffectiveVolumeGrid
+    """
+    lf.set_parameters(q)
+    N_theta = lf.n_effective(effective_volume)
     # if data likelihoods are evaluated on the same grid
-    schechter = s.evaluate(lgrid, zgrid)
-    N_theta = integrate(np.ones_like(schechter), schechter, veff)
     lnlike = np.zeros(len(data))
     for i, d in enumerate(data):
-        like = integrate(d.probability, schechter, veff)
+        l_s, z_s = d["logl_samples"], d["zred_samples"]
+        p_lf = lf.evaluate(l_s, z_s, as_grid=False, in_dlogl=False)
+        v_eff = effective_volume(np.array([10**l_s, z_s]).T)
+        like = np.sum(p_lf * v_eff) / len(l_s)
         lnlike[i] = np.log(like)
 
     return np.sum(lnlike) - np.log(N_theta)
@@ -387,8 +439,10 @@ if __name__ == "__main__":
     omega = (args.area * arcmin**2).to("steradian").value
     lf = s.evaluate(lgrid, zgrid, in_dlogl=True)
     completeness_kwargs = {'flag_complete':args.complete}
-    veff = effective_volume(loglgrid, zgrid, omega, completeness_kwargs)
-    dN_dz_dlogl = lf * veff
+    veff = effective_volume(loglgrid, zgrid, omega, completeness_kwargs,
+                            as_interpolator=True)
+
+    dN_dz_dlogl = lf * veff.data
     dV_dz = veff
     dz = np.gradient(zgrid)
     dlogl = np.gradient(loglgrid)
