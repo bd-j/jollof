@@ -245,7 +245,9 @@ class EffectiveVolumeGrid:
         self.values = veff
         self.loglgrid = loglgrid
         self.zgrid = zgrid
-        self.interp = RegularGridInterpolator((loglgrid, zgrid), veff)
+        self.interp = RegularGridInterpolator((loglgrid, zgrid), veff,
+                                              bounds_error=False,
+                                              fill_value=0.0)
 
     def __call__(self, *args, **kwargs):
         return self.interp(*args, **kwargs)
@@ -331,6 +333,9 @@ def lnlike(q, data, lf, effective_volume):
     for i, d in enumerate(data):
         l_s, z_s = d["logl_samples"], d["zred_samples"]
         p_lf = lf.evaluate(l_s, z_s, as_grid=False, in_dlogl=False)
+        # TODO: handle case where some or all samples are outside the grid.
+        # these samples should have zero effective volume, but still contribute
+        # to 1/N_samples weighting.
         v_eff = effective_volume(np.array([10**l_s, z_s]).T)
         like = np.sum(p_lf * v_eff) / len(l_s)
         lnlike[i] = np.log(like)
