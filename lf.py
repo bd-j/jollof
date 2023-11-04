@@ -63,7 +63,7 @@ def create_parser():
         nargs='+',
         default=[0.0, 0.0, 1e-3, 0, 0, 10**(21 / 2.5), -1.5],
         type=float,
-        help='list of aperture diameters (in arcsec)')
+        help='LF parameters')
 
     #Area in arcmin^2
     parser.add_argument('--area',
@@ -102,12 +102,16 @@ def log_schechter(logl, logphi, loglstar, alpha, l_min=None):
 # Convert luminosity to magnitude
 #########################################
 def lum_to_mag(logl, zred):
-    mag = -2.5 * logl + cosmo.distmod(zred).value -2.5*np.log10(1+zred)
+    mag = -2.5 * logl + cosmo.distmod(zred).value - 2.5*np.log10(1+zred)
     return mag
 
 
 class EvolvingSchechter:
     """ Class to model an evolving schechter fnc
+
+    phi : N/Mpc^3/luminosity at lstar
+    lstar: luminosity of the exponential cutoff, in absolute maggies (i.e., 10**(-0.4M_{AB}))
+    alpha : power law slope below lstar
     """
     def __init__(self, zref=14, order=2):
         self.zref = zref
@@ -135,6 +139,16 @@ class EvolvingSchechter:
         # print(f'self.phi.shape {self.phi.shape}')
 
     def evaluate(self, L, z, grid=True, in_dlogl=False):
+        """
+        Returns
+        -------
+        dN/(dVdL) where dV is Mpc^3 and dL is in absolute Maggies
+
+        or
+
+        dN/(dVdlogL) where dV is Mpc^3 and dlogL is base log_10(L)
+
+        """
         self.set_redshift(z)
         if grid:
             x = (L[:, None] / self.lstar)
@@ -196,10 +210,8 @@ class EvolvingSchechter:
         for i in range(len(zgrid)):
             izg = (zgrid[i] - zgrid[0]) / (zgrid[-1] - zgrid[0])
             ax.plot(x, lf[:, i], color=cmap(izg))
-#        ax.set_xlim([x[0], x[-1]])
-#        ax.set_ylim([1.0e-7, 1])
-        ax.set_xlim([-23,-18])  #ouchi 2009 fig 7
-        ax.set_ylim([4e-7,1e-2])  #ouchi 2009 fig 7
+        ax.set_xlim([-23, -18])  #ouchi 2009 fig 7
+        ax.set_ylim([4e-7, 1e-2])  #ouchi 2009 fig 7
         ax.set_xlabel(r'M$_{\rm UV}$')
         ax.set_ylabel(r'$\phi(L)$')
         ax.set_yscale('log')
@@ -378,9 +390,11 @@ if __name__ == "__main__":
     veff = effective_volume(loglgrid, zgrid, omega, completeness_kwargs)
     dN_dz_dlogl = lf * veff
     dV_dz = veff
+    dz = np.gradient(zgrid)
+    dlogl = np.gradient(loglgrid)
 
-    dN = dN_dz_dlogl * np.gradient(zgrid) * np.gradient(loglgrid)[:, None]
-    dV = dV_dz[0,:] * np.gradient(zgrid) 
+    dN = dN_dz_dlogl * dz * dlogl
+    dV = dV_dz[0,:] * dz
 
     N_bar = dN.sum()  #Average number of galaxies in survey
     V_bar = dV.sum()  #Effective volume of the survey in Mpc^3
@@ -396,7 +410,8 @@ if __name__ == "__main__":
     N = np.random.poisson(N_bar, size=1)[0]
     print(f"Drew {N} galaxies from expected total of {N_bar}")
     loglums, zs = sample_twod(loglgrid, zgrid, dN, n_sample=N)
-    fig, ax = plt.subplots()
+    fig, axes = plt.subplots(2, 2, sharex='col', sharey='row', gridspec_kw={"height_ratios":[1, 4], "width_ratios":[4, 1]})
+    ax = axes[1, 0]
     ax.imshow(dN, origin="lower", cmap="Blues", alpha=0.5,
               extent=[zgrid.min(), zgrid.max(), Muvgrid.max(), Muvgrid.min()],
               aspect="auto")
@@ -404,7 +419,17 @@ if __name__ == "__main__":
     ax.set_ylim(-2.5*args.loglmin, -2.5*args.loglmax)
     ax.set_xlabel("redshift")
     ax.set_ylabel(r"M$_{\rm UV}$")
-    fig.savefig("lf_samples.png")
+    ax = axes[0, 0]
+    ax.hist(zs, bins=10, range=(zgrid.min(), zgrid.max()), density=True,
+            alpha=0.5, color="tomato")
+    ax.plot(zgrid, dN.sum(axis=0)/dN.sum() / dz, linestyle="--", color="royalblue")
+    ax = axes[1, 1]
+    ax.hist(-2.5*loglums, bins=10, range=(Muvgrid.min(), Muvgrid.max()), density=True,
+            alpha=0.5, color="tomato", orientation="horizontal")
+    #ax.plot(dN.sum(axis=-1)/dN.sum() /( dlogL * 2.5), Muvgrid, linestyle="--", color="royalblue")
+    fig.savefig("N_samples.png")
+
+    axes[0, 1].set_visible(False)
 
     #done!
     print('Done!')
