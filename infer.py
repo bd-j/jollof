@@ -5,7 +5,8 @@ import numpy as np
 import matplotlib.pyplot as pl
 
 from lf import create_parser
-from lf import EvolvingSchechter, effective_volume, sample_twod
+from lf import EvolvingSchechter, sample_twod
+from lf import effective_volume
 from lf import lum_to_mag, mag_to_lum
 
 maggies_to_nJy = 3631e9
