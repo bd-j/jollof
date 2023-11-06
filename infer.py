@@ -127,30 +127,54 @@ if __name__ == "__main__":
     # grid of log luminosity
     loglgrid = np.linspace(args.loglmin, args.loglmax, args.nl)
 
-    q_true = np.array([0.0, -1.0e-5, 1e-4, 0, 0, 10**(21 / 2.5), -1.7])
+    q_true = np.array([0.0, -1.0e-5, 1e-4, 0, 0.1, 10**(21 / 2.5), -1.7])
     data_samples, veff = make_mock(loglgrid, zgrid, args.omega, q_true,
                                    sigma_logz=0.01,
                                    n_samples=1)
 
     data_samples.show()
+    z_knots = np.array([veff.zgrid.min(), veff.zgrid.mean(), veff.zgrid.max()])
 
     lf = EvolvingSchechter()
-    lnprobfn = partial(lnlike, data=data_samples, lf=lf, effective_volume=veff)
 
-    priors = dict(phi2=Normal(mean=0, sigma=1e-6),
-                  phi1=Normal(mean=0, sigma=2e-5),
+    priors = dict(phi2=LogUniform(mini=1e-5, maxi=1e-3),
+                  phi1=LogUniform(mini=1e-5, maxi=1e-3),
                   phi0=LogUniform(mini=1e-5, maxi=1e-3),
-                  lstar2=Normal(mean=0, sigma=1e-2),
-                  lstar1=Normal(mean=0, sigma=1e-1),
+                  lstar2=LogUniform(mini=10**(19/2.5), maxi=10**(22/2.5)),
+                  lstar1=LogUniform(mini=10**(19/2.5), maxi=10**(22/2.5)),
                   lstar0=LogUniform(mini=10**(19/2.5), maxi=10**(22/2.5)),
                   alpha=Uniform(mini=-2.5, maxi=-1.5))
     param_names = ["phi2", "phi1", "phi0", "lstar2", "lstar1", "lstar0", "alpha"]
     params = Parameters(param_names, priors)
-    assert np.isfinite(params.prior_product(q_true))
+    qq = lf.coeffs_to_knots(q_true, z_knots)
+    assert np.allclose(lf.knots_to_coeffs(qq, z_knots), q_true)
+    assert np.isfinite(params.prior_product(lf.coeffs_to_knots(q_true, z_knots)))
 
+    if False:
+        lnprobfn = partial(lnlike, data=data_samples, lf=lf, effective_volume=veff)
+        import ultranest
+        sampler = ultranest.ReactiveNestedSampler(params.free_params, lnprobfn, params.prior_transform)
+        sampler.run(**sampler_kwargs)
 
-    sampler = ultranest.ReactiveNestedSampler(params.free_params, lnprobfn, params.prior_transform)
+    if False:
+        lnprobfn = partial(lnlike, data=data_samples, lf=lf, effective_volume=veff)
+        import dynesty
+        dsampler = dynesty.DynamicNestedSampler(lnprobfn, params.prior_transform, len(params.free_params))
+        dsampler.run_nested()
 
+    if True:
 
-    sampler.run(**sampler_kwargs)
+        def lnposterior(qq, params=None, data=None, lf=None, effective_volume=None):
+            lnp = params.prior_product(qq)
+            lnl = lnlike(qq, data=data, lf=lf, effective_volume=effective_volume)
+            return lnp + lnl
+        lnprobfn = partial(lnposterior, params=params, data=data_samples, lf=lf, effective_volume=veff)
+        import emcee
+
+        nwalkers, ndim, niter = 32, len(qq), 512
+        initial = np.array([params.prior_transform(u)
+                            for u in np.random.uniform(0, 1, (nwalkers, ndim))])
+
+        sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobfn)
+        sampler.run_mcmc(initial, niter, progress=True)
     sys.exit()

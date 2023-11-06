@@ -120,7 +120,6 @@ class Parameters:
         return theta
 
 
-
 class Prior(object):
     """Encapsulate the priors in an object.  Each prior should have a
     distribution name and optional parameters specifying scale and location

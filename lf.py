@@ -141,18 +141,44 @@ class EvolvingSchechter:
         self._lstars = q[self._lstar_index]
         self._alphas = q[self._alpha_index]
 
-    def set_redshift(self, z):
+    def knots_to_coeffs(self, qq, z_knots):
+        # HACK
+        # transform from knot values to evolutionary params
+        phi_knot = qq[self._phi_index]
+        lstar_knot = qq[self._lstar_index]
+        zz = np.vander(z_knots - self.zref, 3)
+        phis = np.linalg.solve(zz, phi_knot)
+        lstars = np.linalg.solve(zz, lstar_knot)
+        q = qq.copy()
+        q[self._phi_index] = phis[:]
+        q[self._lstar_index] = lstars[:]
+        return q
+
+    def coeffs_to_knots(self, q, z_knots):
+        # HACK
+        # transform from evolutionary params to knots
+        self.set_parameters(q)
+        self.set_redshift(z_knots)
+        qq = np.zeros_like(q)
+        qq[self._phi_index] = self.phi
+        qq[self._lstar_index] = self.lstar
+        qq[self._alpha_index] = self.alpha[0]
+        return qq
+
+    def set_redshift(self, z=None):
         """Use the model parameter values to compute the LF parameters at the
         given redshifts, and cache them
         """
+        if z is None:
+            z = self.zref
         zz = z - self.zref
         # print(f'zz.shape {zz.shape}')
 
         # by default, vander decreases order
         # with increasing index
-        self.phi = np.dot(np.vander(zz, len(self._phis)), self._phis, )
-        self.lstar = np.dot(np.vander(zz, len(self._lstars)), self._lstars)
-        self.alpha = np.dot(np.vander(zz, len(self._alphas)), self._alphas)
+        self.phi = np.dot(np.vander(zz, len(self._phi_index)), self._phis)
+        self.lstar = np.dot(np.vander(zz, len(self._lstar_index)), self._lstars)
+        self.alpha = np.dot(np.vander(zz, len(self._alpha_index)), self._alphas)
         # print(f'self.phi.shape {self.phi.shape}')
 
     def evaluate(self, L, z, grid=True, in_dlogl=False):
@@ -194,10 +220,10 @@ class EvolvingSchechter:
             The effective volume (in Mpc^3 * 1) in each bin of logL and redshift.
         """
         lf = self.evaluate(veff.lgrid, veff.zgrid)
-        #dN_dz_dlogl = lf * veff.data
         dV_dz = veff.data
-        dV = dV_dz * veff.dz
 
+        # TODO: use dot products here for the integral
+        dV = dV_dz * veff.dz
         dN = lf * dV * veff.dlogl[:, None]
 
         return dN, dV
@@ -365,12 +391,12 @@ def completeness_function(mag, mag_50=30, dc=0.5, flag_complete=False):
 # ------------------------
 # Log likelihood L(data|q)
 # ------------------------
-def lnlike(q, data=None, effective_volume=None, lf=EvolvingSchechter()):
+def lnlike(qq, data=None, effective_volume=None, lf=EvolvingSchechter()):
     """
     Parameters
     ----------
-    q : ndarray
-        LF parameters
+    qq : ndarray
+        LF parameters, in terms of knots of the evolving LF
 
     data : list of dicts
         One dict for each object.  The dictionary should have the keys
@@ -380,11 +406,20 @@ def lnlike(q, data=None, effective_volume=None, lf=EvolvingSchechter()):
 
     effective_volume : instance of EffectiveVolumeGrid
     """
-    debug = f"q=[{', '.join([str(qi) for qi in q])}]"
+    null = -np.inf
+    # transform from knot values to evolutionary params
+    z_knots = np.array([effective_volume.zgrid.min(),
+                        effective_volume.zgrid.mean(),
+                        effective_volume.zgrid.max()])
+    q = lf.knots_to_coeffs(qq, z_knots=z_knots)
+
+    debug = f"q=np.array([{', '.join([str(qi) for qi in q])}])"
+    debug += f"\nqq=np.array([{', '.join([str(qi) for qi in qq])}])"
     lf.set_parameters(q)
     dN, dV = lf.n_effective(effective_volume)
-    Neff = dN.sum()
-    assert Neff > 0, debug
+    Neff = np.nansum(dN)
+    if Neff <= 0:
+        return null
     # If data likelihoods are evaluated on the same grid
     lnlike = np.zeros(len(data.all_samples))
     for i, d in enumerate(data.all_samples):
@@ -400,9 +435,9 @@ def lnlike(q, data=None, effective_volume=None, lf=EvolvingSchechter()):
 
     # Hacks for places where likelihood of all data is ~ 0
     lnp = np.nansum(lnlike) - np.log(Neff)
-    assert np.isfinite(lnp), debug
-    #if not np.isfinite(lnp):
-    #    lnp = -1e8
+    #assert np.isfinite(lnp), debug
+    if not np.isfinite(lnp):
+        return null
 
     return lnp
 
