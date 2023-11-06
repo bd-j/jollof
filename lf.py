@@ -193,11 +193,11 @@ class EvolvingSchechter:
             The effective volume (in Mpc^3 * 1) in each bin of logL and redshift.
         """
         lf = self.evaluate(veff.lgrid, veff.zgrid)
-        dN_dz_dlogl = lf * veff.data
+        #dN_dz_dlogl = lf * veff.data
         dV_dz = veff.data
+        dV = dV_dz * veff.dz
 
-        dN = dN_dz_dlogl * veff.dz * veff.dlogl[:, None]
-        dV = dV_dz[0, :] * veff.dz  #TODO: why is this not L dependent?
+        dN = lf * dV * veff.dlogl[:, None]
 
         return dN, dV
 
@@ -364,7 +364,7 @@ def completeness_function(mag, mag_50=30, dc=0.5, flag_complete=False):
 # ------------------------
 # Log likelihood L(data|q)
 # ------------------------
-def lnlike(q, data, lf, effective_volume):
+def lnlike(q, data=None, effective_volume=None, lf=EvolvingSchechter()):
     """
     Parameters
     ----------

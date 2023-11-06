@@ -1,13 +1,14 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+from functools import partial
 import numpy as np
 import matplotlib.pyplot as pl
 
 from lf import create_parser
 from lf import EvolvingSchechter, sample_twod
-from lf import effective_volume
-from lf import lum_to_mag, mag_to_lum
+from lf import effective_volume, lnlike
+from lf import lum_to_mag, mag_to_lum, arcmin
 
 maggies_to_nJy = 3631e9
 
@@ -97,6 +98,7 @@ if __name__ == "__main__":
 
     parser = create_parser()
     args = parser.parse_args()
+    args.omega = (args.area * arcmin**2).to("steradian").value
 
     # grid of redshifts
     zgrid = np.linspace(args.zmin, args.zmax, args.nz)
@@ -105,6 +107,9 @@ if __name__ == "__main__":
     loglgrid = np.linspace(args.loglmin, args.loglmax, args.nl)
 
     q_true = np.array([0.0, -1.0e-5, 1e-4, 0, 0, 10**(21 / 2.5), -1.7])
-    logl, zred, data = make_mock(loglgrid, zgrid, args.omaega, q_true,
-                                 n_sample=1000)
+    data_samples, veff = make_mock(loglgrid, zgrid, args.omega, q_true,
+                                   n_sample=1000)
+
+    lf = EvolvingSchechter()
+    lnprobfn = partial(lnlike, data=data_samples, lf=lf, effective_volume=veff)
 
