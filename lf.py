@@ -191,8 +191,8 @@ class EvolvingSchechter:
 
         return dN, dV
 
-    def integrated_lf(self, z=None, q=None):
-        """Compute the integrated UV luminsoty density above lmin as a function
+    def integrated_lf(self, z=None, q=None, lmin=6.8):
+        """Compute the integrated UV luminosity density above lmin as a function
         of redshift
 
         Returns
@@ -327,7 +327,6 @@ def effective_volume(loglgrid, zgrid, omega,
     muv = lum_to_mag(loglgrid[:, None], zgrid)
     # fake completeness function
     completeness = completeness_function(muv, **completeness_kwargs)
-
     #print(f'Completeness {completeness.shape} {completeness[0]}')
 
     # fake selection function
