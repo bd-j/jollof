@@ -85,7 +85,7 @@ def make_mock(loglgrid, zgrid, omega,
         obj = dict(logl_true=logl, zred_true=zred,
                    logl_samples=l_s, zred_samples=z_s)
         data.append(obj)
-    alldata = DataSamples(data, n_samples=1000)
+    alldata = DataSamples(data, n_samples=n_samples)
 
     return alldata, veff
 

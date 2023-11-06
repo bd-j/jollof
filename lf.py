@@ -380,14 +380,16 @@ def lnlike(q, data=None, effective_volume=None, lf=EvolvingSchechter()):
 
     effective_volume : instance of EffectiveVolumeGrid
     """
+    debug = f"q=[{', '.join([str(qi) for qi in q])}]"
     lf.set_parameters(q)
     dN, dV = lf.n_effective(effective_volume)
     Neff = dN.sum()
+    assert Neff > 0, debug
     # If data likelihoods are evaluated on the same grid
     lnlike = np.zeros(len(data.all_samples))
     for i, d in enumerate(data.all_samples):
         l_s, z_s = d["logl_samples"], d["zred_samples"]
-        p_lf = lf.evaluate(l_s, z_s, grid=False, in_dlogl=False)
+        p_lf = lf.evaluate(10**l_s, z_s, grid=False, in_dlogl=False)
         # case where some or all samples are outside the grid is handled by
         # giving them zero Veff (but they still contribute to 1/N_samples
         # weighting)
@@ -398,7 +400,7 @@ def lnlike(q, data=None, effective_volume=None, lf=EvolvingSchechter()):
 
     # Hacks for places where likelihood of all data is ~ 0
     lnp = np.nansum(lnlike) - np.log(Neff)
-    #assert np.isfinite(lnp), f"q={q}"
+    assert np.isfinite(lnp), debug
     #if not np.isfinite(lnp):
     #    lnp = -1e8
 
