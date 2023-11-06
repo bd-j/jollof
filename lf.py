@@ -141,6 +141,9 @@ class EvolvingSchechter:
         self._alphas = q[self._alpha_index]
 
     def set_redshift(self, z):
+        """Use the model parameter values to compute the LF parameters at the
+        given redshifts, and cache them
+        """
         zz = z - self.zref
         # print(f'zz.shape {zz.shape}')
 
