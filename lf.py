@@ -194,7 +194,7 @@ class EvolvingSchechter:
         dV_dz = veff.data
 
         dN = dN_dz_dlogl * veff.dz * veff.dlogl[:, None]
-        dV = dV_dz[0, :] * veff.dz
+        dV = dV_dz[0, :] * veff.dz  #TODO: why is this not L dependent?
 
         return dN, dV
 
@@ -329,14 +329,14 @@ def effective_volume(loglgrid, zgrid, omega,
        differential volume in Mpc^3/redshift, multiplied by the probability of
        an object at that luminsity and redshift being in the catalog.
     """
-    # dV/dz (Mpc^3/redshift)
+    # Compute dV/dz (Mpc^3/redshift)
     volume = omega * cosmo.differential_comoving_volume(zgrid).value
     muv = lum_to_mag(loglgrid[:, None], zgrid)
-    # fake completeness function
+    # Fake completeness function
     completeness = completeness_function(muv, **completeness_kwargs)
     #print(f'Completeness {completeness.shape} {completeness[0]}')
 
-    # fake selection function
+    # Fake selection function
     selection_function = completeness * (muv < 31)
 
     veff = selection_function * volume
@@ -350,11 +350,11 @@ def effective_volume(loglgrid, zgrid, omega,
 # --------------------
 def completeness_function(mag, mag_50=30, dc=0.5, flag_complete=False):
 
-    #pretend we're completely complete
-    if(flag_complete):
+    # Pretend we're completely complete
+    if (flag_complete):
         return np.ones_like(mag)
 
-    #return a completeness vs. magnitude
+    # Return a completeness vs. magnitude
     completeness = sigmoid((mag_50 - mag) / dc)
     return completeness
 
@@ -379,7 +379,7 @@ def lnlike(q, data, lf, effective_volume):
     lf.set_parameters(q)
     dN, dV = lf.n_effective(effective_volume)
     Neff = dN.sum()
-    # if data likelihoods are evaluated on the same grid
+    # If data likelihoods are evaluated on the same grid
     lnlike = np.zeros(len(data))
     for i, d in enumerate(data):
         l_s, z_s = d["logl_samples"], d["zred_samples"]
@@ -419,14 +419,14 @@ def sample_twod(X, Y, Z, n_sample=1000):
 #def main():
 if __name__ == "__main__":
 
-    # create the command line argument parser
+    # Create the command line argument parser
     parser = create_parser()
 
-    # store the command line arguments
+    # Store the command line arguments
     args = parser.parse_args()
 
-    #output command line arguments
-    if(args.verbose):
+    # Output command line arguments
+    if (args.verbose):
         print(f'Minimum redshift: {args.zmin}')
         print(f'Maximum redshift: {args.zmax}')
         print(f'Number of z bins: {args.nz}')
@@ -486,8 +486,8 @@ if __name__ == "__main__":
                             as_interpolator=True)
 
     dN, dV = s.n_effective(veff)
-    N_bar = dN.sum()  #Average number of galaxies in survey
-    V_bar = dV.sum()  #Effective volume of the survey in Mpc^3
+    N_bar = dN.sum()  # Average number of galaxies in survey
+    V_bar = dV.sum()  # Effective volume of the survey in Mpc^3
 
     if (args.verbose):
         print(f'Area in arcmin^2 = {args.area}')
