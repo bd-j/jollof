@@ -8,6 +8,7 @@ from astropy.table import Table
 from astropy.io import fits
 from astropy.units import arcmin
 
+# TODO:  rewrite everything in jax.
 
 __all__ = ['EvolvingSchechter', 'EffectiveVolumeGrid',
            'sample_twod',
@@ -383,18 +384,25 @@ def lnlike(q, data=None, effective_volume=None, lf=EvolvingSchechter()):
     dN, dV = lf.n_effective(effective_volume)
     Neff = dN.sum()
     # If data likelihoods are evaluated on the same grid
-    lnlike = np.zeros(len(data))
-    for i, d in enumerate(data):
+    lnlike = np.zeros(len(data.all_samples))
+    for i, d in enumerate(data.all_samples):
         l_s, z_s = d["logl_samples"], d["zred_samples"]
-        p_lf = lf.evaluate(l_s, z_s, as_grid=False, in_dlogl=False)
-        # TODO: handle case where some or all samples are outside the grid.
-        # these samples should have zero effective volume, but still contribute
-        # to 1/N_samples weighting.
-        v_eff = effective_volume(np.array([10**l_s, z_s]).T)
+        p_lf = lf.evaluate(l_s, z_s, grid=False, in_dlogl=False)
+        # case where some or all samples are outside the grid is handled by
+        # giving them zero Veff (but they still contribute to 1/N_samples
+        # weighting)
+        # TODO: store the data in this format so we don't have to create arrays every time.
+        v_eff = effective_volume(np.array([l_s, z_s]).T)
         like = np.sum(p_lf * v_eff) / len(l_s)
         lnlike[i] = np.log(like)
 
-    return np.sum(lnlike) - np.log(Neff)
+    # Hacks for places where likelihood of all data is ~ 0
+    lnp = np.nansum(lnlike) - np.log(Neff)
+    #assert np.isfinite(lnp), f"q={q}"
+    #if not np.isfinite(lnp):
+    #    lnp = -1e8
+
+    return lnp
 
 
 # ------------------------------
