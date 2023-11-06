@@ -62,7 +62,7 @@ def create_parser():
     #Evovling luminosity function parameters
     parser.add_argument('--lf_params',
         nargs='+',
-        default=[0.0, 0.0, 1e-3, 0, 0, 10**(21 / 2.5), -1.5],
+        default=[0.0, 0.0, 1e-4, 0, 0, 10**(21 / 2.5), -1.8],
         type=float,
         help='LF parameters')
 
@@ -166,6 +166,31 @@ class EvolvingSchechter:
             factor = 1
         return factor * self.phi * x**(self.alpha + int(in_dlogl)) * np.exp(-x)
 
+    def n_effective(self, veff):
+        """Compute the expected number of objects given a selection function on
+        a grid of logL and redshift.
+
+        Parameters
+        ----------
+        veff : instance of EffectiveVolmeGrid
+
+        Returns
+        -------
+        dN : ndarray of shape (N_L, N_z)
+            The number of galaxies expected to be observed in each bin of logL and redshift
+
+        dV : ndarray of shape (N_L, N_z)
+            The effective volume (in Mpc^3 * 1) in each bin of logL and redshift.
+        """
+        lf = self.evaluate(veff.lgrid, veff.zgrid)
+        dN_dz_dlogl = lf * veff.data
+        dV_dz = veff.data
+
+        dN = dN_dz_dlogl * veff.dz * veff.dlogl[:, None]
+        dV = dV_dz[0, :] * veff.dz
+
+        return dN, dV
+
     def integrated_lf(self, z=None, q=None):
         """Compute the integrated UV luminsoty density above lmin as a function
         of redshift
@@ -237,6 +262,22 @@ class EvolvingSchechter:
         ax.tick_params(which='both', direction='in', right=True)
         plt.savefig('lf_evolution.png', bbox_inches='tight', facecolor='white')
 
+    def sample_lf(self, loglgrid, zgrid, n_sample=100):
+        """Draw some samples from the LF(L, z) distribution and plot them.
+        """
+        lf = s.evaluate(10**loglgrid, zgrid)
+        loglums, zs = sample_twod(loglgrid, zgrid, lf, n_sample=n_sample)
+        fig, ax = plt.subplots()
+        ax.imshow(np.log10(lf), origin="lower", cmap="Blues", alpha=0.5,
+                  extent=[zgrid.min(), zgrid.max(), Muvgrid.max(), Muvgrid.min()],
+                  aspect="auto")
+        ax.plot(zs, -2.5 * loglums, "o", color="red", label="samples")
+        ax.set_ylim(-2.5*loglgrid.min(), -2.5*loglgrid.max())
+        ax.set_xlabel("redshift")
+        ax.set_ylabel(r"M$_{\rm UV}$")
+        fig.savefig("lf_samples.png")
+        return loglums, zs
+
 
 class EffectiveVolumeGrid:
     """Thin wrapper on RegularGridInterpolator that keeps track of the grid points and grid values
@@ -244,7 +285,10 @@ class EffectiveVolumeGrid:
     def __init__(self, loglgrid, zgrid, veff):
         self.values = veff
         self.loglgrid = loglgrid
+        self.lgrid = 10**loglgrid
         self.zgrid = zgrid
+        self.dz = np.gradient(zgrid)
+        self.dlogl = np.gradient(loglgrid)
         self.interp = RegularGridInterpolator((loglgrid, zgrid), veff,
                                               bounds_error=False,
                                               fill_value=0.0)
@@ -291,7 +335,7 @@ def effective_volume(loglgrid, zgrid, omega,
 
     veff = selection_function * volume
     if as_interpolator:
-        veff = EffectiveVolumeGrid((loglgrid, zgrid), veff)
+        veff = EffectiveVolumeGrid(loglgrid, zgrid, veff)
 
     return veff
 
@@ -327,7 +371,8 @@ def lnlike(q, data, lf, effective_volume):
     effective_volume : instance of EffectiveVolumeGrid
     """
     lf.set_parameters(q)
-    N_theta = lf.n_effective(effective_volume)
+    dN, dV = lf.n_effective(effective_volume)
+    Neff = dN.sum()
     # if data likelihoods are evaluated on the same grid
     lnlike = np.zeros(len(data))
     for i, d in enumerate(data):
@@ -340,7 +385,7 @@ def lnlike(q, data, lf, effective_volume):
         like = np.sum(p_lf * v_eff) / len(l_s)
         lnlike[i] = np.log(like)
 
-    return np.sum(lnlike) - np.log(N_theta)
+    return np.sum(lnlike) - np.log(Neff)
 
 
 # ------------------------------
@@ -398,10 +443,7 @@ if __name__ == "__main__":
     Muvgrid = -2.5 * loglgrid
 
     # initialize evolving schechter
-    # q_true = np.array([0.0, 0.0, 1e-3, 0, 0, 10**(18 / 2.5), -1.5])
     print(args.lf_params)
-    #exit()
-    #q_true = np.array([0.0, -1.0e-4, 1e-3, 0, 0, 10**(21 / 2.5), -1.5])
     q_true = np.array(args.lf_params)
     s = EvolvingSchechter()
     s.set_parameters(q_true)
@@ -426,48 +468,32 @@ if __name__ == "__main__":
     # sample LF
     if (args.verbose):
         print('sampling from the LF...')
-    lf = s.evaluate(lgrid, zgrid)
-    loglums, zs = sample_twod(loglgrid, zgrid, lf, n_sample=1000)
-    fig, ax = plt.subplots()
-    ax.imshow(np.log10(lf), origin="lower", cmap="Blues", alpha=0.5,
-              extent=[zgrid.min(), zgrid.max(), Muvgrid.max(), Muvgrid.min()],
-              aspect="auto")
-    ax.plot(zs, -2.5 * loglums, "o", color="red", label="samples")
-    ax.set_ylim(-2.5*args.loglmin, -2.5*args.loglmax)
-    ax.set_xlabel("redshift")
-    ax.set_ylabel(r"M$_{\rm UV}$")
-    fig.savefig("lf_samples.png")
+    loglums, zs = s.sample_lf(loglgrid, zgrid, n_sample=100)
 
     # sample number counts
     if (args.verbose):
         print('sampling from the number counts...')
     omega = (args.area * arcmin**2).to("steradian").value
     lf = s.evaluate(lgrid, zgrid, in_dlogl=True)
-    completeness_kwargs = {'flag_complete':args.complete}
+    completeness_kwargs = {'flag_complete': args.complete}
     veff = effective_volume(loglgrid, zgrid, omega, completeness_kwargs,
                             as_interpolator=True)
 
-    dN_dz_dlogl = lf * veff.data
-    dV_dz = veff
-    dz = np.gradient(zgrid)
-    dlogl = np.gradient(loglgrid)
-
-    dN = dN_dz_dlogl * dz * dlogl
-    dV = dV_dz[0,:] * dz
-
+    dN, dV = s.n_effective(veff)
     N_bar = dN.sum()  #Average number of galaxies in survey
     V_bar = dV.sum()  #Effective volume of the survey in Mpc^3
 
-    if(args.verbose):
+    if (args.verbose):
         print(f'Area in arcmin^2 = {args.area}')
         print(f'Area in steraidians = {omega}')
         print(f'Cosmology: h = {cosmo.h}, Omega_m = {cosmo.Om0}')
         print(f'Effective volume = {V_bar} [Mpc^3].')
         print(f'Number density = {N_bar/V_bar} [Mpc^-3]')
 
-
     N = np.random.poisson(N_bar, size=1)[0]
-    print(f"Drew {N} galaxies from expected total of {N_bar}")
+    note = f"Drew {N} galaxies from expected total of {N_bar:.2f}"
+    if args.verbose:
+        print(note)
     loglums, zs = sample_twod(loglgrid, zgrid, dN, n_sample=N)
     fig, axes = plt.subplots(2, 2, sharex='col', sharey='row', gridspec_kw={"height_ratios":[1, 4], "width_ratios":[4, 1]})
     ax = axes[1, 0]
@@ -481,14 +507,15 @@ if __name__ == "__main__":
     ax = axes[0, 0]
     ax.hist(zs, bins=10, range=(zgrid.min(), zgrid.max()), density=True,
             alpha=0.5, color="tomato")
-    ax.plot(zgrid, dN.sum(axis=0)/dN.sum() / dz, linestyle="--", color="royalblue")
+    ax.plot(veff.zgrid, dN.sum(axis=0)/dN.sum() / veff.dz, linestyle="--", color="royalblue")
     ax = axes[1, 1]
     ax.hist(-2.5*loglums, bins=10, range=(Muvgrid.min(), Muvgrid.max()), density=True,
             alpha=0.5, color="tomato", orientation="horizontal")
     #ax.plot(dN.sum(axis=-1)/dN.sum() /( dlogL * 2.5), Muvgrid, linestyle="--", color="royalblue")
-    fig.savefig("N_samples.png")
-
+    #axes[0, 0].text(1.1, 0.8, note, transform=axes[0, 0].transAxes)
+    axes[1,0].text(0.1, 0.9, note, transform=axes[1, 0].transAxes)
     axes[0, 1].set_visible(False)
+    fig.savefig("N_samples.png")
 
     #done!
     print('Done!')
