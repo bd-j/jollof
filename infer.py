@@ -115,7 +115,7 @@ def sample_mock_noise(logl, zred, n_samples=1,
 # ------------------------
 # Log likelihood L(data|q)
 # ------------------------
-def lnlike(qq, data=None, veff=None, lf=EvolvingSchechter()):
+def lnlike(qq, data=None, veff=None, lf=EvolvingSchechter(), fast=True):
     """
     Parameters
     ----------
@@ -148,19 +148,31 @@ def lnlike(qq, data=None, veff=None, lf=EvolvingSchechter()):
         # this can happen in the evolving LF case for pathological parameters...
         return null
 
-    # compute likelihood of each object
-    lnlike = np.zeros(len(data.all_samples))
-    for i, d in enumerate(data.all_samples):
-        l_s, z_s = d["logl_samples"], d["zred_samples"]
-        # TODO: in_dlogl = True/False?
-        p_lf = lf.evaluate(10**l_s, z_s, grid=False, in_dlogl=False)
-        # case where some or all samples are outside the grid is handled by
-        # giving them zero Veff (but they still contribute to 1/N_samples
-        # weighting)
-        # TODO: store the data in this format so we don't have to create arrays every time.
-        v_eff_value = veff(np.array([l_s, z_s]).T)
-        like = np.nansum(p_lf * v_eff_value) / len(l_s)
-        lnlike[i] = np.log(like)
+    if fast:
+        # compute likelihood of all objects, equal number of samples each
+        # not actually faster!
+        l_s, z_s = data.all_samples["logl_samples"], data.all_samples["zred_samples"]
+        n_g, n_s = l_s.shape
+        l_s, z_s = l_s.flatten(), z_s.flatten()
+        p_lf = lf.evaluate(10**l_s, z_s, grid=False, in_dlogl=False)  # ~40% of time
+        v_eff_value = veff(np.array([l_s, z_s]).T)   # ~40% of time
+        like = (p_lf * v_eff_value).reshape(n_g, n_s)
+        lnlike = np.log(np.nansum(like, axis=-1)) - np.log(n_s)
+
+    else:
+        # compute likelihood of each object, allowing for ragged samples
+        lnlike = np.zeros(len(data.all_samples))
+        for i, d in enumerate(data.all_samples):
+            l_s, z_s = d["logl_samples"], d["zred_samples"]
+            # TODO: in_dlogl = True/False?
+            p_lf = lf.evaluate(10**l_s, z_s, grid=False, in_dlogl=False)
+            # case where some or all samples are outside the grid is handled by
+            # giving them zero Veff (but they still contribute to 1/N_samples
+            # weighting)
+            # TODO: store the data in this format so we don't have to create arrays every time.
+            v_eff_value = veff(np.array([l_s, z_s]).T)
+            like = np.nansum(p_lf * v_eff_value) / len(l_s)
+            lnlike[i] = np.log(like)
 
     # Hacks for places where likelihood of all data is ~ 0
     lnp = np.nansum(lnlike) - Neff
@@ -174,6 +186,7 @@ def lnlike(qq, data=None, veff=None, lf=EvolvingSchechter()):
 if __name__ == "__main__":
 
     parser = create_parser()
+    parser.add_argument("--fitter", type=str, default="none", choices=["none", "dynesty", "emcee", "brute", "ultranest"])
     args = parser.parse_args()
     args.omega = (args.area * arcmin**2).to("steradian").value
     sampler_kwargs = dict()
@@ -184,18 +197,28 @@ if __name__ == "__main__":
     # grid of log luminosity
     loglgrid = np.linspace(args.loglmin, args.loglmax, args.nl)
 
+    # -------------------
     # --- Truth ---
-    q_true = np.array([0.0, 0.0, 1e-3, 0, 0.1, 10**(21 / 2.5), -1.7])
+    # -------------------
+    q_true = np.array([0.0, 0.0, 1e-4, 0, 0.1, 10**(21 / 2.5), -1.7])
     #z_knots = np.array([zgrid.min(), zgrid.mean(), zgrid.max()])
     #qq_true = lf.coeffs_to_knots(q_true, z_knots)
     #assert np.allclose(lf.knots_to_coeffs(qq, z_knots), q_true)
     qq_true = np.array([q_true[2], q_true[5], q_true[6]])
+
+    # -----------------------
+    # --- build mock data ---
+    # -----------------------
 
     mock, veff = make_mock(loglgrid, zgrid, args.omega, q_true,
                            sigma_logz=0.01,
                            n_samples=1)
     print(f"{len(mock.all_samples)} objects drawn from this LF x Veff")
     mock.show()
+
+    # ---------------------------
+    # --- Set up model and priors
+    # ---------------------------
 
     lf = EvolvingSchechter()
     priors = dict(#phi2=LogUniform(mini=1e-5, maxi=1e-3),
@@ -212,14 +235,19 @@ if __name__ == "__main__":
 
     lnprobfn = partial(lnlike, data=mock, lf=lf, veff=veff)
 
-    if False:
+
+    # -------------------
+    # --- Fitting -------
+    # -------------------
+
+    if args.fitter == "ultranest":
         # --- ultranest ---
         lnprobfn = partial(lnlike, data=mock, lf=lf, veff=veff)
         import ultranest
         sampler = ultranest.ReactiveNestedSampler(params.free_params, lnprobfn, params.prior_transform)
         sampler.run(**sampler_kwargs)
 
-    if False:
+    if args.fitter == "dynesty":
         # --- Dynesty ---
         lnprobfn = partial(lnlike, data=mock, lf=lf, veff=veff)
         import dynesty
@@ -228,10 +256,13 @@ if __name__ == "__main__":
                                                 nlive=1000,
                                                 bound='multi', sample="rwalk")
         dsampler.run_nested(n_effective=1000, dlogz_init=0.05)
+        from dynesty import plotting as dyplot
+        fig = dyplot.cornerplot(dsampler.results, labels=[r"$\phi_*$", r"L$_*$", r"$\alpha$"], truths=qq_true)
 
-    if False:
+    if args.fitter == "emcee":
         # --- emcee ---
         def lnposterior(qq, params=None, data=None, lf=None, veff=None):
+            # need to include the prior for emcee
             lnp = params.prior_product(qq)
             lnl = lnlike(qq, data=data, lf=lf, veff=veff)
             return lnp + lnl
@@ -245,14 +276,31 @@ if __name__ == "__main__":
         sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobfn)
         sampler.run_mcmc(initial, niter, progress=True)
 
-    if False:
+    if args.fitter == "brute":
         # -- Brute Force on a grid ---
         lnprobfn = partial(lnlike, data=mock, lf=lf, veff=veff)
         from itertools import product
-        phi_grid = 10**np.linspace(-4, -2, 30)
+        phi_grid = 10**np.linspace(-5, -3, 30)
         lstar_grid = 10**np.linspace(19/2.5, 22/2.5, 30)
         alpha_grid = np.linspace(-2.5, -1.5, 30)
         qqs = np.array(list(product(phi_grid, lstar_grid, alpha_grid)))
         lnp = np.zeros(len(qqs))
         for i, qq in enumerate(qqs):
             lnp[i] = lnprobfn(qq)
+
+        p = np.exp(lnp - lnp.max())
+        p[~np.isfinite(p)] = 0
+        fig, ax = pl.subplots()
+        ax.clear()
+        ax.hexbin(np.log10(qqs[:, 0]), -2.5 * np.log10(qqs[:, 1]), C=p, gridsize=25)
+        ax.set_xlabel(r"$\phi_{*}$")
+        #ax.set_xscale("log")
+        ax.set_ylabel(r"M$_{*,\rm UV}$")
+        ax.plot(np.log10(qq_true[0]), -2.5 * np.log10(qq_true[1]), "ro")
+        fig, ax = pl.subplots()
+        ax.clear()
+        ax.hexbin(qqs[:, 2], -2.5 * np.log10(qqs[:, 1]), C=p, gridsize=25)
+        ax.set_xlabel(r"$\alpha$")
+        #ax.set_xscale("log")
+        ax.set_ylabel(r"M$_{*,\rm UV}$")
+        ax.plot(qq_true[2], -2.5 * np.log10(qq_true[1]), "ro")

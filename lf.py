@@ -219,7 +219,8 @@ class EvolvingSchechter:
         dV : ndarray of shape (N_L, N_z)
             The effective volume (in Mpc^3 * 1) in each bin of logL and redshift.
         """
-        lf = self.evaluate(veff.lgrid, veff.zgrid)
+        # this takes most of the time:
+        lf = self.evaluate(veff.lgrid, veff.zgrid, grid=True, in_dlogl=True)
         dV_dz = veff.data
 
         # TODO: use dot products here for the integral
