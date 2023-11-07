@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import sys
 from functools import partial
 import numpy as np
 import matplotlib.pyplot as pl
+from astropy.io import fits
 
 from lf import create_parser
 from lf import EvolvingSchechter, sample_twod
@@ -21,13 +21,15 @@ class DataSamples:
     constrain the LF.  Optionally include flux samples to incorporate k-correction effects or other
     """
 
-    def __init__(self, objects, n_samples=1e4):
+    def __init__(self, objects=None, filename=None, ext="SAMPLES", n_samples=1e4):
+
+        self.all_samples = []
         self.n_samples = n_samples
-        dtype = self.get_dtype(n_samples)
-        self.all_samples = np.zeros(len(objects), dtype=dtype)
-        for i, obj in enumerate(objects):
-            for k in obj.keys():
-                self.all_samples[i][k] = obj[k]
+        if filename is not None:
+            self.all_samples = fits.getdata(filename, ext)
+            self.n_samples = len(self.all_samples[0]["zred_samples"])
+        if objects is not None:
+            self.add_objects(objects)
 
     def add_objects(self, objects):
         dtype = self.get_dtype(self.n_samples)
@@ -35,7 +37,7 @@ class DataSamples:
         for i, obj in enumerate(objects):
             for k in obj.keys():
                 new[i][k] = obj[k]
-        self.all_samples = np.concatenate(self.all_samples, new)
+        self.all_samples = np.concatenate([self.all_samples, new])
 
     def get_dtype(self, n_samples):
         truecols = [("logl_true", float), ("zred_true", float)]
@@ -53,6 +55,13 @@ class DataSamples:
             ax.plot(d["zred_samples"][:n_s], d["logl_samples"][:n_s],
                     marker=".", linestyle="", color='gray')
         fig.savefig("mock_samples.png")
+
+    def to_fits(self, fitsfilename):
+        samples = fits.BinTableHDU(self.all_samples, name="SAMPLES")
+        samples.header["NSAMPL"] = self.n_samples
+        hdul = fits.HDUList([fits.PrimaryHDU(),
+                             samples])
+        hdul.writeto(fitsfilename, overwrite=True)
 
 
 def make_mock(loglgrid, zgrid, omega,
@@ -215,9 +224,10 @@ if __name__ == "__main__":
 
     mock, veff = make_mock(loglgrid, zgrid, args.omega, q_true,
                            sigma_logz=0.01,
-                           n_samples=1)
+                           n_samples=args.n_samples)
     print(f"{len(mock.all_samples)} objects drawn from this LF x Veff")
     mock.show()
+    mock.to_fits("mock_data.fits")
 
     # ---------------------------
     # --- Set up model and priors
@@ -252,8 +262,8 @@ if __name__ == "__main__":
             qq = np.array(np.array([param_dict['phi0'], param_dict['lstar0'], param_dict['alpha']]))
             return lnprobfn(qq)
 
-        sampler = Sampler(prior, lnprobfn_dict, n_live=2000)
-        sampler.run(verbose=True)
+        sampler = Sampler(prior, lnprobfn_dict, n_live=1000)
+        sampler.run(verbose=False)
 
         import corner
         points, log_w, log_l = sampler.posterior()
