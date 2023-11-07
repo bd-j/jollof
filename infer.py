@@ -187,7 +187,9 @@ if __name__ == "__main__":
 
     parser = create_parser()
     parser.add_argument("--fitter", type=str, default="none",
-                        choices=["none", "dynesty", "emcee", "brute", "ultranest"])
+                        choices=["none", "dynesty", "emcee", "brute",
+                                 "ultranest", "nautilus"])
+    parser.add_argument("--n_samples", type=int, default=1)
     args = parser.parse_args()
     args.omega = (args.area * arcmin**2).to("steradian").value
     sampler_kwargs = dict()
@@ -240,13 +242,38 @@ if __name__ == "__main__":
     # -------------------
     # --- Fitting -------
     # -------------------
+    if args.fitter == "nautilus":
+        from nautilus import Prior, Sampler
+
+        prior = Prior()
+        for k, p in priors.items():
+            prior.add_parameter(k, dist=(p.params['mini'], p.params['maxi']))
+        def lnprobfn_dict(param_dict):
+            qq = np.array(np.array([param_dict['phi0'], param_dict['lstar0'], param_dict['alpha']]))
+            return lnprobfn(qq)
+
+        sampler = Sampler(prior, lnprobfn_dict, n_live=2000)
+        sampler.run(verbose=True)
+
+        import corner
+        points, log_w, log_l = sampler.posterior()
+        ndim = points.shape[1]
+        fig, axes = pl.subplots(ndim, ndim, figsize=(3.5, 3.5))
+        fig = corner.corner(points, weights=np.exp(log_w), bins=20, labels=prior.keys,
+                            plot_datapoints=False, plot_density=False,
+                            fill_contours=True, levels=(0.68, 0.95),
+                            range=np.ones(ndim) * 0.999, fig=fig,
+                            truths=qq_true, truth_color="red")
+        fig.savefig("posteriors-nautilus.png")
 
     if args.fitter == "ultranest":
         # --- ultranest ---
         lnprobfn = partial(lnlike, data=mock, lf=lf, veff=veff)
         import ultranest
         sampler = ultranest.ReactiveNestedSampler(params.free_params, lnprobfn, params.prior_transform)
-        sampler.run(**sampler_kwargs)
+        result = sampler.run(**sampler_kwargs)
+        from ultranest.plot import cornerplot
+        fig, axes = cornerplot(result)
 
     if args.fitter == "dynesty":
         # --- Dynesty ---
@@ -260,7 +287,7 @@ if __name__ == "__main__":
         dsampler.run_nested(n_effective=1000, dlogz_init=0.05)
         from dynesty import plotting as dyplot
         fig, axes = dyplot.cornerplot(dsampler.results, labels=[r"$\phi_*$", r"L$_*$", r"$\alpha$"], truths=qq_true)
-        fig.savefig("dynesty_posteriors.png")
+        fig.savefig("posteriors-dynesty.png")
 
     if args.fitter == "emcee":
         # --- emcee ---
