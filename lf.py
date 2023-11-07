@@ -221,10 +221,10 @@ class EvolvingSchechter:
         """
         # this takes most of the time:
         lf = self.evaluate(veff.lgrid, veff.zgrid, grid=True, in_dlogl=True)
-        dV_dz = veff.data
+        dV_dz = veff.data  # shape (nL, nz)
 
         # TODO: use dot products here for the integral
-        dV = dV_dz * veff.dz
+        dV = dV_dz * veff.dz[None, :]
         dN = lf * dV * veff.dlogl[:, None]
 
         return dN, dV

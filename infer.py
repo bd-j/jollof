@@ -137,7 +137,7 @@ def lnlike(qq, data=None, veff=None, lf=EvolvingSchechter(), fast=True):
     #                    effective_volume.zgrid.max()])
     #q = lf.knots_to_coeffs(qq, z_knots=z_knots)
 
-    q = np.array([0, 0, qq[0], 0, 0, qq[1], qq[2]])
+    q = np.array([0, 0, 10**qq[0], 0, 0, 10**qq[1], qq[2]])
 
     debug = f"q=np.array([{', '.join([str(qi) for qi in q])}])"
     debug += f"\nqq=np.array([{', '.join([str(qi) for qi in qq])}])"
@@ -154,7 +154,7 @@ def lnlike(qq, data=None, veff=None, lf=EvolvingSchechter(), fast=True):
         l_s, z_s = data.all_samples["logl_samples"], data.all_samples["zred_samples"]
         n_g, n_s = l_s.shape
         l_s, z_s = l_s.flatten(), z_s.flatten()
-        p_lf = lf.evaluate(10**l_s, z_s, grid=False, in_dlogl=False)  # ~40% of time
+        p_lf = lf.evaluate(10**l_s, z_s, grid=False, in_dlogl=True)  # ~40% of time
         v_eff_value = veff(np.array([l_s, z_s]).T)   # ~40% of time
         like = (p_lf * v_eff_value).reshape(n_g, n_s)
         lnlike = np.log(np.nansum(like, axis=-1)) - np.log(n_s)
@@ -165,7 +165,7 @@ def lnlike(qq, data=None, veff=None, lf=EvolvingSchechter(), fast=True):
         for i, d in enumerate(data.all_samples):
             l_s, z_s = d["logl_samples"], d["zred_samples"]
             # TODO: in_dlogl = True/False?
-            p_lf = lf.evaluate(10**l_s, z_s, grid=False, in_dlogl=False)
+            p_lf = lf.evaluate(10**l_s, z_s, grid=False, in_dlogl=True)
             # case where some or all samples are outside the grid is handled by
             # giving them zero Veff (but they still contribute to 1/N_samples
             # weighting)
@@ -186,7 +186,8 @@ def lnlike(qq, data=None, veff=None, lf=EvolvingSchechter(), fast=True):
 if __name__ == "__main__":
 
     parser = create_parser()
-    parser.add_argument("--fitter", type=str, default="none", choices=["none", "dynesty", "emcee", "brute", "ultranest"])
+    parser.add_argument("--fitter", type=str, default="none",
+                        choices=["none", "dynesty", "emcee", "brute", "ultranest"])
     args = parser.parse_args()
     args.omega = (args.area * arcmin**2).to("steradian").value
     sampler_kwargs = dict()
@@ -200,11 +201,11 @@ if __name__ == "__main__":
     # -------------------
     # --- Truth ---
     # -------------------
-    q_true = np.array([0.0, 0.0, 1e-4, 0, 0.1, 10**(21 / 2.5), -1.7])
+    q_true = np.array([0.0, 0.0, 1e-4, 0, 0.0, 10**(21 / 2.5), -1.7])
     #z_knots = np.array([zgrid.min(), zgrid.mean(), zgrid.max()])
     #qq_true = lf.coeffs_to_knots(q_true, z_knots)
     #assert np.allclose(lf.knots_to_coeffs(qq, z_knots), q_true)
-    qq_true = np.array([q_true[2], q_true[5], q_true[6]])
+    qq_true = np.array([np.log10(q_true[2]), np.log10(q_true[5]), q_true[6]])
 
     # -----------------------
     # --- build mock data ---
@@ -223,10 +224,10 @@ if __name__ == "__main__":
     lf = EvolvingSchechter()
     priors = dict(#phi2=LogUniform(mini=1e-5, maxi=1e-3),
                   #phi1=LogUniform(mini=1e-5, maxi=1e-3),
-                  phi0=LogUniform(mini=1e-5, maxi=1e-3),
+                  phi0=Uniform(mini=-5, maxi=-3),
                   #lstar2=LogUniform(mini=10**(19/2.5), maxi=10**(22/2.5)),
                   #lstar1=LogUniform(mini=10**(19/2.5), maxi=10**(22/2.5)),
-                  lstar0=LogUniform(mini=10**(19 / 2.5), maxi=10**(22 / 2.5)),
+                  lstar0=Uniform(mini=(19 / 2.5), maxi=(22 / 2.5)),
                   alpha=Uniform(mini=-2.5, maxi=-1.5))
     #param_names = ["phi2", "phi1", "phi0", "lstar2", "lstar1", "lstar0", "alpha"]
     param_names = ["phi0", "lstar0", "alpha"]
@@ -254,10 +255,12 @@ if __name__ == "__main__":
         dsampler = dynesty.DynamicNestedSampler(lnprobfn, params.prior_transform,
                                                 len(params.free_params),
                                                 nlive=1000,
-                                                bound='multi', sample="rwalk")
+                                                bound='multi', sample="unif",
+                                                walks=48)
         dsampler.run_nested(n_effective=1000, dlogz_init=0.05)
         from dynesty import plotting as dyplot
-        fig = dyplot.cornerplot(dsampler.results, labels=[r"$\phi_*$", r"L$_*$", r"$\alpha$"], truths=qq_true)
+        fig, axes = dyplot.cornerplot(dsampler.results, labels=[r"$\phi_*$", r"L$_*$", r"$\alpha$"], truths=qq_true)
+        fig.savefig("dynesty_posteriors.png")
 
     if args.fitter == "emcee":
         # --- emcee ---
