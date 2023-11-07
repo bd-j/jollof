@@ -153,7 +153,7 @@ def lnlike(qq, data=None, veff=None, lf=EvolvingSchechter()):
     for i, d in enumerate(data.all_samples):
         l_s, z_s = d["logl_samples"], d["zred_samples"]
         # TODO: in_dlogl = True/False?
-        p_lf = lf.evaluate(10**l_s, z_s, grid=False, in_dlogl=True)
+        p_lf = lf.evaluate(10**l_s, z_s, grid=False, in_dlogl=False)
         # case where some or all samples are outside the grid is handled by
         # giving them zero Veff (but they still contribute to 1/N_samples
         # weighting)
@@ -163,7 +163,7 @@ def lnlike(qq, data=None, veff=None, lf=EvolvingSchechter()):
         lnlike[i] = np.log(like)
 
     # Hacks for places where likelihood of all data is ~ 0
-    lnp = np.nansum(lnlike) - np.log(Neff)
+    lnp = np.nansum(lnlike) - Neff
     #assert np.isfinite(lnp), debug
     if not np.isfinite(lnp):
         return null
@@ -194,7 +194,7 @@ if __name__ == "__main__":
     mock, veff = make_mock(loglgrid, zgrid, args.omega, q_true,
                            sigma_logz=0.01,
                            n_samples=1)
-    print(len(mock.all_samples))
+    print(f"{len(mock.all_samples)} objects drawn from this LF x Veff")
     mock.show()
 
     lf = EvolvingSchechter()
@@ -209,6 +209,8 @@ if __name__ == "__main__":
     param_names = ["phi0", "lstar0", "alpha"]
     params = Parameters(param_names, priors)
     assert np.isfinite(params.prior_product(qq_true))
+
+    lnprobfn = partial(lnlike, data=mock, lf=lf, veff=veff)
 
     if False:
         # --- ultranest ---
@@ -243,7 +245,7 @@ if __name__ == "__main__":
         sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobfn)
         sampler.run_mcmc(initial, niter, progress=True)
 
-    if True:
+    if False:
         # -- Brute Force on a grid ---
         lnprobfn = partial(lnlike, data=mock, lf=lf, veff=veff)
         from itertools import product
