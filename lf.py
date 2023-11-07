@@ -388,59 +388,6 @@ def completeness_function(mag, mag_50=30, dc=0.5, flag_complete=False):
     completeness = sigmoid((mag_50 - mag) / dc)
     return completeness
 
-# ------------------------
-# Log likelihood L(data|q)
-# ------------------------
-def lnlike(qq, data=None, effective_volume=None, lf=EvolvingSchechter()):
-    """
-    Parameters
-    ----------
-    qq : ndarray
-        LF parameters, in terms of knots of the evolving LF
-
-    data : list of dicts
-        One dict for each object.  The dictionary should have the keys
-        'log_samples' and 'zred_samples'
-
-    lf : instance of EvolvingSchecter
-
-    effective_volume : instance of EffectiveVolumeGrid
-    """
-    null = -np.inf
-    # transform from knot values to evolutionary params
-    z_knots = np.array([effective_volume.zgrid.min(),
-                        effective_volume.zgrid.mean(),
-                        effective_volume.zgrid.max()])
-    q = lf.knots_to_coeffs(qq, z_knots=z_knots)
-
-    debug = f"q=np.array([{', '.join([str(qi) for qi in q])}])"
-    debug += f"\nqq=np.array([{', '.join([str(qi) for qi in qq])}])"
-    lf.set_parameters(q)
-    dN, dV = lf.n_effective(effective_volume)
-    Neff = np.nansum(dN)
-    if Neff <= 0:
-        return null
-    # If data likelihoods are evaluated on the same grid
-    lnlike = np.zeros(len(data.all_samples))
-    for i, d in enumerate(data.all_samples):
-        l_s, z_s = d["logl_samples"], d["zred_samples"]
-        p_lf = lf.evaluate(10**l_s, z_s, grid=False, in_dlogl=False)
-        # case where some or all samples are outside the grid is handled by
-        # giving them zero Veff (but they still contribute to 1/N_samples
-        # weighting)
-        # TODO: store the data in this format so we don't have to create arrays every time.
-        v_eff = effective_volume(np.array([l_s, z_s]).T)
-        like = np.sum(p_lf * v_eff) / len(l_s)
-        lnlike[i] = np.log(like)
-
-    # Hacks for places where likelihood of all data is ~ 0
-    lnp = np.nansum(lnlike) - np.log(Neff)
-    #assert np.isfinite(lnp), debug
-    if not np.isfinite(lnp):
-        return null
-
-    return lnp
-
 
 # ------------------------------
 # Sample from a 2d histogram

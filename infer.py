@@ -8,12 +8,10 @@ import matplotlib.pyplot as pl
 
 from lf import create_parser
 from lf import EvolvingSchechter, sample_twod
-from lf import effective_volume, lnlike
+from lf import effective_volume
 from lf import lum_to_mag, mag_to_lum, arcmin
 
 from priors import Parameters, LogUniform, Uniform, Normal, LogNormal
-import ultranest
-
 
 maggies_to_nJy = 3631e9
 
@@ -113,6 +111,61 @@ def sample_mock_noise(logl, zred, n_samples=1000,
     return logl_samples, zred_samples
 
 
+# ------------------------
+# Log likelihood L(data|q)
+# ------------------------
+def lnlike(qq, data=None, effective_volume=None, lf=EvolvingSchechter()):
+    """
+    Parameters
+    ----------
+    qq : ndarray
+        LF parameters, in terms of knots of the evolving LF
+
+    data : list of dicts
+        One dict for each object.  The dictionary should have the keys
+        'log_samples' and 'zred_samples'
+
+    lf : instance of EvolvingSchecter
+
+    effective_volume : instance of EffectiveVolumeGrid
+    """
+    null = -np.inf
+    # transform from knot values to evolutionary params
+    #z_knots = np.array([effective_volume.zgrid.min(),
+    #                    effective_volume.zgrid.mean(),
+    #                    effective_volume.zgrid.max()])
+    #q = lf.knots_to_coeffs(qq, z_knots=z_knots)
+
+    q = np.array([0, 0, qq[0], 0, 0, qq[1], qq[2]])
+
+    debug = f"q=np.array([{', '.join([str(qi) for qi in q])}])"
+    debug += f"\nqq=np.array([{', '.join([str(qi) for qi in qq])}])"
+    lf.set_parameters(q)
+    dN, dV = lf.n_effective(effective_volume)
+    Neff = np.nansum(dN)
+    if Neff <= 0:
+        return null
+    # If data likelihoods are evaluated on the same grid
+    lnlike = np.zeros(len(data.all_samples))
+    for i, d in enumerate(data.all_samples):
+        l_s, z_s = d["logl_samples"], d["zred_samples"]
+        p_lf = lf.evaluate(10**l_s, z_s, grid=False, in_dlogl=True)
+        # case where some or all samples are outside the grid is handled by
+        # giving them zero Veff (but they still contribute to 1/N_samples
+        # weighting)
+        # TODO: store the data in this format so we don't have to create arrays every time.
+        v_eff = effective_volume(np.array([l_s, z_s]).T)
+        like = np.sum(p_lf * v_eff) / len(l_s)
+        lnlike[i] = np.log(like)
+
+    # Hacks for places where likelihood of all data is ~ 0
+    lnp = np.nansum(lnlike) - np.log(Neff)
+    #assert np.isfinite(lnp), debug
+    if not np.isfinite(lnp):
+        return null
+
+    return lnp
+
 
 if __name__ == "__main__":
 
@@ -127,54 +180,73 @@ if __name__ == "__main__":
     # grid of log luminosity
     loglgrid = np.linspace(args.loglmin, args.loglmax, args.nl)
 
-    q_true = np.array([0.0, -1.0e-5, 1e-4, 0, 0.1, 10**(21 / 2.5), -1.7])
-    data_samples, veff = make_mock(loglgrid, zgrid, args.omega, q_true,
-                                   sigma_logz=0.01,
-                                   n_samples=1)
+    # --- Truth ---
+    q_true = np.array([0.0, 0.0, 1e-3, 0, 0.1, 10**(21 / 2.5), -1.7])
+    #z_knots = np.array([zgrid.min(), zgrid.mean(), zgrid.max()])
+    #qq_true = lf.coeffs_to_knots(q_true, z_knots)
+    #assert np.allclose(lf.knots_to_coeffs(qq, z_knots), q_true)
+    qq_true = np.array([q_true[2], q_true[5], q_true[6]])
 
-    data_samples.show()
-    z_knots = np.array([veff.zgrid.min(), veff.zgrid.mean(), veff.zgrid.max()])
+    mock, veff = make_mock(loglgrid, zgrid, args.omega, q_true,
+                           sigma_logz=0.01,
+                           n_samples=1)
+    print(len(mock.all_samples))
+    mock.show()
 
     lf = EvolvingSchechter()
-
-    priors = dict(phi2=LogUniform(mini=1e-5, maxi=1e-3),
-                  phi1=LogUniform(mini=1e-5, maxi=1e-3),
+    priors = dict(#phi2=LogUniform(mini=1e-5, maxi=1e-3),
+                  #phi1=LogUniform(mini=1e-5, maxi=1e-3),
                   phi0=LogUniform(mini=1e-5, maxi=1e-3),
-                  lstar2=LogUniform(mini=10**(19/2.5), maxi=10**(22/2.5)),
-                  lstar1=LogUniform(mini=10**(19/2.5), maxi=10**(22/2.5)),
-                  lstar0=LogUniform(mini=10**(19/2.5), maxi=10**(22/2.5)),
+                  #lstar2=LogUniform(mini=10**(19/2.5), maxi=10**(22/2.5)),
+                  #lstar1=LogUniform(mini=10**(19/2.5), maxi=10**(22/2.5)),
+                  lstar0=LogUniform(mini=10**(19 / 2.5), maxi=10**(22 / 2.5)),
                   alpha=Uniform(mini=-2.5, maxi=-1.5))
-    param_names = ["phi2", "phi1", "phi0", "lstar2", "lstar1", "lstar0", "alpha"]
+    #param_names = ["phi2", "phi1", "phi0", "lstar2", "lstar1", "lstar0", "alpha"]
+    param_names = ["phi0", "lstar0", "alpha"]
     params = Parameters(param_names, priors)
-    qq = lf.coeffs_to_knots(q_true, z_knots)
-    assert np.allclose(lf.knots_to_coeffs(qq, z_knots), q_true)
-    assert np.isfinite(params.prior_product(lf.coeffs_to_knots(q_true, z_knots)))
+    assert np.isfinite(params.prior_product(qq_true))
 
     if False:
-        lnprobfn = partial(lnlike, data=data_samples, lf=lf, effective_volume=veff)
+        # --- ultranest ---
+        lnprobfn = partial(lnlike, data=mock, lf=lf, effective_volume=veff)
         import ultranest
         sampler = ultranest.ReactiveNestedSampler(params.free_params, lnprobfn, params.prior_transform)
         sampler.run(**sampler_kwargs)
 
     if False:
-        lnprobfn = partial(lnlike, data=data_samples, lf=lf, effective_volume=veff)
+        # --- Dynesty ---
+        lnprobfn = partial(lnlike, data=mock, lf=lf, effective_volume=veff)
         import dynesty
-        dsampler = dynesty.DynamicNestedSampler(lnprobfn, params.prior_transform, len(params.free_params))
-        dsampler.run_nested()
+        dsampler = dynesty.DynamicNestedSampler(lnprobfn, params.prior_transform,
+                                                len(params.free_params),
+                                                nlive=1000,
+                                                bound='multi', sample="rwalk")
+        dsampler.run_nested(n_effective_samples=1000, dlogz_init=0.05)
 
-    if True:
-
+    if False:
+        # --- emcee ---
         def lnposterior(qq, params=None, data=None, lf=None, effective_volume=None):
             lnp = params.prior_product(qq)
             lnl = lnlike(qq, data=data, lf=lf, effective_volume=effective_volume)
             return lnp + lnl
-        lnprobfn = partial(lnposterior, params=params, data=data_samples, lf=lf, effective_volume=veff)
+        lnprobfn = partial(lnposterior, params=params, data=mock, lf=lf, effective_volume=veff)
         import emcee
 
-        nwalkers, ndim, niter = 32, len(qq), 512
+        nwalkers, ndim, niter = 32, len(qq_true), 512
         initial = np.array([params.prior_transform(u)
                             for u in np.random.uniform(0, 1, (nwalkers, ndim))])
 
         sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobfn)
         sampler.run_mcmc(initial, niter, progress=True)
-    sys.exit()
+
+    if True:
+        # -- Brute Force on a grid ---
+        lnprobfn = partial(lnlike, data=mock, lf=lf, effective_volume=veff)
+        from itertools import product
+        phi_grid = 10**np.linspace(-4, -2, 30)
+        lstar_grid = 10**np.linspace(19/2.5, 22/2.5, 30)
+        alpha_grid = np.linspace(-2.5, -1.5, 30)
+        qqs = np.array(list(product(phi_grid, lstar_grid, alpha_grid)))
+        lnp = np.zeros(len(qqs))
+        for i, qq in enumerate(qqs):
+            lnp[i] = lnprobfn(qq)
