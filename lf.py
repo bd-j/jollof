@@ -346,7 +346,7 @@ def sigmoid(x):
 # ------------------------------
 # Effective volume vs. z and mag
 # ------------------------------
-def effective_volume(loglgrid, zgrid, omega,
+def construct_effective_volume(loglgrid, zgrid, omega,
                      completeness_kwargs={},
                      selection_kwargs={},
                      as_interpolator=True):
@@ -477,8 +477,9 @@ if __name__ == "__main__":
     omega = (args.area * arcmin**2).to("steradian").value
     lf = s.evaluate(lgrid, zgrid, in_dlogl=True)
     completeness_kwargs = {'flag_complete': args.complete}
-    veff = effective_volume(loglgrid, zgrid, omega, completeness_kwargs,
-                            as_interpolator=True)
+    veff = construct_effective_volume(loglgrid, zgrid, omega,
+                                      completeness_kwargs,
+                                      as_interpolator=True)
 
     dN, dV = s.n_effective(veff)
     N_bar = dN.sum()  # Average number of galaxies in survey
