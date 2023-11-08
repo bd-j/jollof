@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import colormaps
 from scipy.interpolate import RegularGridInterpolator
+from scipy.special import gamma, gammainc
 from astropy.cosmology import Planck15 as cosmo
 from astropy.table import Table
 from astropy.io import fits
@@ -229,18 +230,64 @@ class EvolvingSchechter:
 
         return dN, dV
 
-    def integrated_lf(self, z=None, q=None, lmin=6.8):
-        """Compute the integrated UV luminosity density above lmin as a function
+    def rhol(self, z=None, q=None, lmin=6.8, lmax=20.0):
+        """Compute the integrated luminosity density 
+        between lmin and lmax as a function
         of redshift
 
         Returns
         -------
-        L/Mpc^3/z
+        L/Mpc^3
         """
         if q is not None:
             self.set_parameters(q)
         self.set_redshift(z)
-        raise(NotImplementedError)
+        xmin = 10**(lmin)/self.lstar
+        xmax = 10**(lmax)/self.lstar
+        n = self.alpha+3
+        g0 = gammainc(n,xmin)  #\Gamma(alpha+2,L/Lstar)
+        g1 = gammainc(n,xmax)  #\Gamma(alpha+2,L/Lstar)
+
+        #maggie is 10**(-MUV/2.5)
+        # log10 lm =  -MUV/2.5
+        # MUV = -2.5* log10 lm
+        # MUV = 31.4 - 2.5*log10 flux_nJy)
+        # flux_nJy = 10**(-0.4*(MUV-31.4)) = 10**(31.4/2.5) * maggie
+        # nJy = 1e-32 erg /s/ cm^2 /Hz
+        # A_10pc = 4*np.pi*(3.08567758128e18)**2 cm^2 = 1.1964951826995877e+38 cm^2
+        # L_cgs = maggie * 10**(31.4/2.5) * 1e-32 * 1.1964951826995877e+38
+        # L_cgs = maggie * 4.344211434763621e18
+        fconv = 4.344211434763621e18 #maggie to erg/s/Hz
+        return fconv*self.phi*self.lstar*gamma(n)*(g1-g0)
+
+    def nl(self, z=None, q=None, lmin=6.8, lmax=20.0):
+        """Compute the integrated number density 
+        between lmin and lmax as a function
+        of redshift
+
+        Returns
+        -------
+        L/Mpc^3
+        """
+        if q is not None:
+            self.set_parameters(q)
+        #print(f'phistar {self.phi}')
+        #print(f'lstar {self.lstar}')
+        #print(f'alpha {self.alpha}')
+
+        self.set_redshift(z)
+        xmin = 10**(lmin)/self.lstar
+        xmax = 10**(lmax)/self.lstar
+        #print(f'xmin {xmin}')
+        #print(f'xmax {xmax}')
+        n = self.alpha+2
+        g0 = gammainc(n,xmin)  #\Gamma(alpha+1,L/Lstar)
+        #print(f'g0 {g0}')
+        g1 = gammainc(n,xmax)  #\Gamma(alpha+1,L/Lstar)
+        #print(f'g1 {g1}')
+        #print(f'n {n} gamma({gamma(n)}) {gamma(n)}')
+        return self.phi*gamma(n)*(g1-g0)
+
 
     def record_parameter_evolution(self, zgrid):
         """record the LF parameter evolution to an ascii table
@@ -484,7 +531,7 @@ if __name__ == "__main__":
 
     dN, dV = s.n_effective(veff)
     N_bar = dN.sum()  # Average number of galaxies in survey
-    V_bar = dV.sum()  # Effective volume of the survey in Mpc^3
+    V_bar = dV[0,:].sum()  # Effective volume of the survey in Mpc^3
 
     if (args.verbose):
         print(f'Area in arcmin^2 = {args.area}')
@@ -492,6 +539,8 @@ if __name__ == "__main__":
         print(f'Cosmology: h = {cosmo.h}, Omega_m = {cosmo.Om0}')
         print(f'Effective volume = {V_bar} [Mpc^3].')
         print(f'Number density = {N_bar/V_bar} [Mpc^-3]')
+        print(f'Number density (analytical) = {s.nl(zgrid,lmin=-10.,lmax=25.)[0]} [Mpc^-3]')
+        print(f'Luminosity density (analytical) = {s.rhol(zgrid)[0]/1e25} [10^25 erg s^-1 Hz^-1 Mpc^-3]')
 
     N = np.random.poisson(N_bar, size=1)[0]
     note = f"Drew {N} galaxies from expected total of {N_bar:.2f}"
