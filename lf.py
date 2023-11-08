@@ -248,16 +248,20 @@ class EvolvingSchechter:
         g0 = gammainc(n,xmin)  #\Gamma(alpha+2,L/Lstar)
         g1 = gammainc(n,xmax)  #\Gamma(alpha+2,L/Lstar)
 
-        #maggie is 10**(-MUV/2.5)
+        # maggie = f_Jy / 3631
+        # f_Jy = maggies * 3631.0
+        # f_cgs = f_Jy * 1e-23 erg/s/cm^2/Hz
+        # A_10pc = 4*np.pi*(10*3.08567758128e18)**2 cm^2 = 1.1964951826995877e+40 cm^2
+        # L_cgs = f_cgs * A_10pc
+        # L_cgs = maggies * 3631 * 1.0e-23 * 1.1964951826995877e+40
         # log10 lm =  -MUV/2.5
         # MUV = -2.5* log10 lm
         # MUV = 31.4 - 2.5*log10 flux_nJy)
         # flux_nJy = 10**(-0.4*(MUV-31.4)) = 10**(31.4/2.5) * maggie
         # nJy = 1e-32 erg /s/ cm^2 /Hz
-        # A_10pc = 4*np.pi*(3.08567758128e18)**2 cm^2 = 1.1964951826995877e+38 cm^2
-        # L_cgs = maggie * 10**(31.4/2.5) * 1e-32 * 1.1964951826995877e+38
-        # L_cgs = maggie * 4.344211434763621e18
-        fconv = 4.344211434763621e18 #maggie to erg/s/Hz
+        # L_cgs = maggie * 10**(31.4/2.5) * 1e-32 * 1.1964951826995877e+40
+        # L_cgs = maggie * 4.344211434763621e20
+        fconv = 4.344211434763621e20 #maggie to erg/s/Hz
         return fconv*self.phi*self.lstar*gamma(n)*(g1-g0)
 
     def nl(self, z=None, q=None, lmin=6.8, lmax=20.0):
@@ -540,7 +544,7 @@ if __name__ == "__main__":
         print(f'Effective volume = {V_bar} [Mpc^3].')
         print(f'Number density = {N_bar/V_bar} [Mpc^-3]')
         print(f'Number density (analytical) = {s.nl(zgrid,lmin=-10.,lmax=25.)[0]} [Mpc^-3]')
-        print(f'Luminosity density (analytical) = {s.rhol(zgrid)[0]/1e25} [10^25 erg s^-1 Hz^-1 Mpc^-3]')
+        print(f'Luminosity density (analytical) = {s.rhol(zgrid,lmin=-10,lmax=25.)[0]/1e25} [10^25 erg s^-1 Hz^-1 Mpc^-3]')
 
     N = np.random.poisson(N_bar, size=1)[0]
     note = f"Drew {N} galaxies from expected total of {N_bar:.2f}"
