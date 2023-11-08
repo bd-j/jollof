@@ -3,7 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import colormaps
 from scipy.interpolate import RegularGridInterpolator
-from scipy.special import gamma, gammainc
+from scipy.special import gamma, gammainc, gammasgn
+from sympy.functions.special.gamma_functions import uppergamma
 from astropy.cosmology import Planck15 as cosmo
 from astropy.table import Table
 from astropy.io import fits
@@ -264,7 +265,7 @@ class EvolvingSchechter:
         fconv = 4.344211434763621e20 #maggie to erg/s/Hz
         return fconv*self.phi*self.lstar*gamma(n)*(g1-g0)
 
-    def nl(self, z=None, q=None, lmin=6.8, lmax=20.0):
+    def nl(self, z=None, q=None, lmin=7.2, lmax=20.0):
         """Compute the integrated number density 
         between lmin and lmax as a function
         of redshift
@@ -282,15 +283,25 @@ class EvolvingSchechter:
         self.set_redshift(z)
         xmin = 10**(lmin)/self.lstar
         xmax = 10**(lmax)/self.lstar
+        #print(f'lstar {self.lstar}')
         #print(f'xmin {xmin}')
         #print(f'xmax {xmax}')
         n = self.alpha+1
-        g0 = gammainc(n,xmin)  #\Gamma(alpha+1,L/Lstar)
+        #g0 = gammainc(n,xmin)  #\Gamma(alpha+1,L/Lstar)
+        #print(n,xmin,xmax)
+        #g0 = uppergamma(n,xmin)
+        g0 = [uppergamma(n[i],xmin[i]) for i in range(len(n))]
+        g0 = np.asarray(g0)
+
         #print(f'g0 {g0}')
-        g1 = gammainc(n,xmax)  #\Gamma(alpha+1,L/Lstar)
+        #g1 = gammainc(n,xmax)  #\Gamma(alpha+1,L/Lstar)
+        #g1 = uppergamma(n,xmax)
+        g1 = [uppergamma(n[i],xmax[i]) for i in range(len(n))]
+        g1 = np.asarray(g1)
         #print(f'g1 {g1}')
         #print(f'n {n} gamma({gamma(n)}) {gamma(n)}')
-        return self.phi*gamma(n)*(g1-g0)
+        #return self.phi*gamma(n)*(g1-g0)
+        return self.phi*gammasgn(n)*(g1-g0)
 
 
     def record_parameter_evolution(self, zgrid):
@@ -543,8 +554,9 @@ if __name__ == "__main__":
         print(f'Cosmology: h = {cosmo.h}, Omega_m = {cosmo.Om0}')
         print(f'Effective volume = {V_bar} [Mpc^3].')
         print(f'Number density = {N_bar/V_bar} [Mpc^-3]')
-        print(f'Number density (analytical) = {s.nl(zgrid,lmin=-10.,lmax=25.)[0]} [Mpc^-3]')
-        print(f'Luminosity density (analytical) = {s.rhol(zgrid,lmin=-10,lmax=25.)[0]/1e25} [10^25 erg s^-1 Hz^-1 Mpc^-3]')
+        print(f'Number density (analytical) = {s.nl(zgrid,lmin=7.2,lmax=25.)[0]} [Mpc^-3]')
+        print(f'Luminosity density (analytical, MUV<-18) = {s.rhol(zgrid,lmin=7.2,lmax=25.)[0]/1e25} [10^25 erg s^-1 Hz^-1 Mpc^-3]')
+        print(f'Luminosity density (analytical, Total) = {s.rhol(zgrid,lmin=-10,lmax=25.)[0]/1e25} [10^25 erg s^-1 Hz^-1 Mpc^-3]')
 
     N = np.random.poisson(N_bar, size=1)[0]
     note = f"Drew {N} galaxies from expected total of {N_bar:.2f}"
