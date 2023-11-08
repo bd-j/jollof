@@ -5,6 +5,7 @@ from functools import partial
 import numpy as np
 import matplotlib.pyplot as pl
 from astropy.io import fits
+from astropy.table import Table
 
 from lf import create_parser
 from lf import EvolvingSchechter, sample_twod
@@ -21,15 +22,30 @@ class DataSamples:
     constrain the LF.  Optionally include flux samples to incorporate k-correction effects or other
     """
 
-    def __init__(self, objects=None, filename=None, ext="SAMPLES", n_samples=1e4):
+    def __init__(self, objects=None, filename=None, ext="SAMPLES", n_samples=1000):
 
         self.all_samples = []
         self.n_samples = n_samples
         if filename is not None:
-            self.all_samples = fits.getdata(filename, ext)
+            self.all_samples = self.rectify_eazy(filename, ext)
             self.n_samples = len(self.all_samples[0]["zred_samples"])
         if objects is not None:
             self.add_objects(objects)
+
+    def rectify_eazy(self, filename, ext):
+        table = Table.read(filename, hdu=ext)
+        convert = dict(zred_samples=("z_samples", lambda x: x),
+                       logl_samples=("MUV_samples", lambda x: -0.4 * x))
+
+        #table.rename_columns(old, new)
+        #table["logl_samples"] = -0.4 * table["logl_samples"]
+        #return table.as_array().filled()
+        dtype = self.get_dtype(self.n_samples)
+        all_samples = np.zeros(len(table), dtype=dtype)
+        for n, (o, konvert) in convert.items():
+            all_samples[:][n] = konvert(table[o][:, :self.n_samples])
+        return all_samples
+
 
     def add_objects(self, objects):
         dtype = self.get_dtype(self.n_samples)
