@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 from matplotlib import colormaps
 from scipy.interpolate import RegularGridInterpolator
 from scipy.special import gamma, gammainc, gammasgn
-from sympy.functions.special.gamma_functions import uppergamma
 from astropy.cosmology import Planck15 as cosmo
 from astropy.table import Table
 from astropy.io import fits
@@ -274,6 +273,7 @@ class EvolvingSchechter:
         -------
         L/Mpc^3
         """
+        from sympy.functions.special.gamma_functions import uppergamma
         if q is not None:
             self.set_parameters(q)
         #print(f'phistar {self.phi}')

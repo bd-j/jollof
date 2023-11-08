@@ -24,7 +24,7 @@ class DataSamples:
 
     def __init__(self, objects=None, filename=None, ext="SAMPLES", n_samples=1000):
 
-        self.all_samples = []
+        self.all_samples = None
         self.n_samples = n_samples
         if filename is not None:
             self.all_samples = self.rectify_eazy(filename, ext)
@@ -46,14 +46,16 @@ class DataSamples:
             all_samples[:][n] = konvert(table[o][:, :self.n_samples])
         return all_samples
 
-
     def add_objects(self, objects):
         dtype = self.get_dtype(self.n_samples)
         new = np.zeros(len(objects), dtype=dtype)
         for i, obj in enumerate(objects):
             for k in obj.keys():
                 new[i][k] = obj[k]
-        self.all_samples = np.concatenate([self.all_samples, new])
+        if self.all_samples is None:
+            self.all_samples = new
+        else:
+            self.all_samples = np.concatenate([self.all_samples, new])
 
     def get_dtype(self, n_samples):
         truecols = [("logl_true", float), ("zred_true", float)]
@@ -71,6 +73,7 @@ class DataSamples:
             ax.plot(d["zred_samples"][:n_s], d["logl_samples"][:n_s],
                     marker=".", linestyle="", color='gray')
         fig.savefig("mock_samples.png")
+        return fig, ax
 
     def to_fits(self, fitsfilename):
         samples = fits.BinTableHDU(self.all_samples, name="SAMPLES")
@@ -140,6 +143,30 @@ def sample_mock_noise(logl, zred, n_samples=1,
 # ------------------------
 # Log likelihood L(data|q)
 # ------------------------
+
+def transfrom(qq, lf=None):
+    """Transform from sampling parameters to evolving LF parameters
+    """
+    # non-evolving
+    q = np.array([0, 0, 10**qq[0], 0, 0, 10**qq[1], qq[2]])
+
+    if False:
+        # fractional change in linear parameter
+        delta_z = veff.zgrid.max() - veff.zgrid.mean()
+        p0 = 10**qq[0]
+        p1 = (qq[1] - 1.0) * p0 * delta_z
+
+    if False:
+        # transform from knots
+        from transforms import knots_to_coeffs
+        z_knots = np.array([veff.zgrid.min(),
+                            veff.zgrid.mean(),
+                            veff.zgrid.max()])
+        q = knots_to_coeffs(lf, qq, z_knots=z_knots)
+
+    return q
+
+
 def lnlike(qq, data=None, veff=None, lf=EvolvingSchechter(), fast=True):
     """
     Parameters
@@ -156,13 +183,8 @@ def lnlike(qq, data=None, veff=None, lf=EvolvingSchechter(), fast=True):
     veff : instance of EffectiveVolumeGrid
     """
     null = -np.inf
-    # transform from knot values to evolutionary params
-    #z_knots = np.array([effective_volume.zgrid.min(),
-    #                    effective_volume.zgrid.mean(),
-    #                    effective_volume.zgrid.max()])
-    #q = lf.knots_to_coeffs(qq, z_knots=z_knots)
 
-    q = np.array([0, 0, 10**qq[0], 0, 0, 10**qq[1], qq[2]])
+    q = transform(qq)
 
     debug = f"q=np.array([{', '.join([str(qi) for qi in q])}])"
     debug += f"\nqq=np.array([{', '.join([str(qi) for qi in qq])}])"
@@ -200,6 +222,7 @@ def lnlike(qq, data=None, veff=None, lf=EvolvingSchechter(), fast=True):
             lnlike[i] = np.log(like)
 
     # Hacks for places where likelihood of all data is ~ 0
+    lnlike[~np.isfinite(lnlike)] = np.nan
     lnp = np.nansum(lnlike) - Neff
     #assert np.isfinite(lnp), debug
     if not np.isfinite(lnp):
@@ -284,13 +307,13 @@ if __name__ == "__main__":
         import corner
         points, log_w, log_l = sampler.posterior()
         ndim = points.shape[1]
-        fig, axes = pl.subplots(ndim, ndim, figsize=(3.5, 3.5))
+        fig, axes = pl.subplots(ndim, ndim, figsize=(5., 5.))
         fig = corner.corner(points, weights=np.exp(log_w), bins=20, labels=prior.keys,
                             plot_datapoints=False, plot_density=False,
                             fill_contours=True, levels=(0.68, 0.95),
                             range=np.ones(ndim) * 0.999, fig=fig,
                             truths=qq_true, truth_color="red")
-        fig.savefig("posteriors-nautilus.png")
+        fig.savefig("posteriors-nautilus.png", dpi=300)
 
     if args.fitter == "ultranest":
         # --- ultranest ---

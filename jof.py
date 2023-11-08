@@ -50,7 +50,11 @@ if __name__ == "__main__":
     jof = DataSamples(filename="data/samples.v094.11072023.fits",
                       ext="ZSAMP",
                       n_samples=args.n_samples)
-    jof.show(filename="jof_samples.png")
+    sfig, sax = jof.show(n_s=jof.n_samples, filename="jof_samples.png")
+    sax.set_ylim(jof.all_samples["logl_samples"].min(), jof.all_samples["logl_samples"].max())
+    sax.set_xlim(jof.all_samples["zred_samples"].min(), jof.all_samples["zred_samples"].max())
+    sfig.savefig("jof_samples.png", dpi=300)
+    pl.close(sfig)
 
     # ---------------------------
     # --- Set up model and priors
@@ -59,10 +63,10 @@ if __name__ == "__main__":
     lf = EvolvingSchechter()
     priors = dict(#phi2=LogUniform(mini=1e-5, maxi=1e-3),
                   #phi1=LogUniform(mini=1e-5, maxi=1e-3),
-                  phi0=Uniform(mini=-5, maxi=-3),
+                  phi0=Uniform(mini=-6, maxi=-3),
                   #lstar2=LogUniform(mini=10**(19/2.5), maxi=10**(22/2.5)),
                   #lstar1=LogUniform(mini=10**(19/2.5), maxi=10**(22/2.5)),
-                  lstar0=Uniform(mini=(19 / 2.5), maxi=(22 / 2.5)),
+                  lstar0=Uniform(mini=(19 / 2.5), maxi=(23 / 2.5)),
                   alpha=Uniform(mini=-2.5, maxi=-1.5))
     #param_names = ["phi2", "phi1", "phi0", "lstar2", "lstar1", "lstar0", "alpha"]
     param_names = ["phi0", "lstar0", "alpha"]
@@ -90,14 +94,15 @@ if __name__ == "__main__":
 
         import corner
         points, log_w, log_l = sampler.posterior()
+        mle = points[np.argmax(log_l)]
         ndim = points.shape[1]
-        fig, axes = pl.subplots(ndim, ndim, figsize=(3.5, 3.5))
+        fig, axes = pl.subplots(ndim, ndim, figsize=(6., 6.))
         fig = corner.corner(points, weights=np.exp(log_w), bins=20, labels=prior.keys,
                             plot_datapoints=False, plot_density=False,
                             fill_contours=True, levels=(0.68, 0.95),
                             range=np.ones(ndim) * 0.999, fig=fig,
-                            truths=qq_true, truth_color="red")
-        fig.savefig("jof-posteriors-nautilus.png")
+                            truths=mle, truth_color="red")
+        fig.savefig("jof-posteriors-nautilus.png", dpi=300)
 
     if args.fitter == "ultranest":
         # --- ultranest ---
