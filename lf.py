@@ -244,7 +244,7 @@ class EvolvingSchechter:
         self.set_redshift(z)
         xmin = 10**(lmin)/self.lstar
         xmax = 10**(lmax)/self.lstar
-        n = self.alpha+3
+        n = self.alpha+2
         g0 = gammainc(n,xmin)  #\Gamma(alpha+2,L/Lstar)
         g1 = gammainc(n,xmax)  #\Gamma(alpha+2,L/Lstar)
 
@@ -284,7 +284,7 @@ class EvolvingSchechter:
         xmax = 10**(lmax)/self.lstar
         #print(f'xmin {xmin}')
         #print(f'xmax {xmax}')
-        n = self.alpha+2
+        n = self.alpha+1
         g0 = gammainc(n,xmin)  #\Gamma(alpha+1,L/Lstar)
         #print(f'g0 {g0}')
         g1 = gammainc(n,xmax)  #\Gamma(alpha+1,L/Lstar)
