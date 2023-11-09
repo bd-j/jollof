@@ -111,6 +111,9 @@ def log_schechter(logl, logphi, loglstar, alpha, l_min=None):
 #########################################
 # Convert luminosity to magnitude and vice versa
 #########################################
+Maggie_to_cgs = 4.344211434763621e20
+
+
 def lum_to_mag(logl, zred):
     mag = -2.5 * logl + cosmo.distmod(zred).value - 2.5*np.log10(1+zred)
     return mag
@@ -219,11 +222,11 @@ class EvolvingSchechter:
         if q is not None:
             self.set_parameters(q)
         self.set_redshift(z)
-        xmin = 10**(lmin)/self.lstar
-        xmax = 10**(lmax)/self.lstar
-        n = self.alpha+2
-        g0 = gammainc(n,xmin)  #\Gamma(alpha+2,L/Lstar)
-        g1 = gammainc(n,xmax)  #\Gamma(alpha+2,L/Lstar)
+        xmin = 10**(lmin) / self.lstar
+        xmax = 10**(lmax) / self.lstar
+        n = self.alpha + 2
+        g0 = gammainc(n, xmin)  #\Gamma(alpha+2,L/Lstar)
+        g1 = gammainc(n, xmax)  #\Gamma(alpha+2,L/Lstar)
 
         # maggie = f_Jy / 3631
         # f_Jy = maggies * 3631.0

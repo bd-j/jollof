@@ -60,7 +60,7 @@ if __name__ == "__main__":
     lf = EvolvingSchechter()
     pdict = dict(phi0=Uniform(mini=-5, maxi=-3),
                  phi1=Uniform(mini=-3, maxi=3),
-                 lstar0=Uniform(mini=(19 / 2.5), maxi=(22 / 2.5)),
+                 lstar0=Uniform(mini=(17 / 2.5), maxi=(22 / 2.5)),
                  lstar1=Uniform(mini=-3, maxi=3),
                  alpha=Uniform(mini=-2.5, maxi=-1.5))
     if args.evolving:
@@ -96,6 +96,9 @@ if __name__ == "__main__":
             return lnprobfn(qq)
 
 
+    # -------------------
+    # --- fitting -------
+    # -------------------
     if args.fitter == "nautilus":
         from nautilus import Prior, Sampler
 
@@ -106,25 +109,17 @@ if __name__ == "__main__":
         sampler = Sampler(prior, lnprobfn_dict, n_live=1000)
         sampler.run(verbose=False)
 
-        import corner
-        points, log_w, log_l = sampler.posterior()
-        mle = points[np.argmax(log_l)]
-        ndim = points.shape[1]
-        fig, axes = pl.subplots(ndim, ndim, figsize=(6., 6.))
-        fig = corner.corner(points, weights=np.exp(log_w), bins=20, labels=prior.keys,
-                            plot_datapoints=False, plot_density=False,
-                            fill_contours=True, levels=(0.68, 0.95),
-                            range=np.ones(ndim) * 0.999, fig=fig,
-                            truths=mle, truth_color="red")
-        fig.savefig("jof-posteriors-nautilus.png", dpi=300)
+        points, log_w, log_like = sampler.posterior()
 
     if args.fitter == "ultranest":
         # --- ultranest ---
         import ultranest
         sampler = ultranest.ReactiveNestedSampler(params.free_params, lnprobfn, params.prior_transform)
         result = sampler.run(**sampler_kwargs)
-        from ultranest.plot import cornerplot
-        fig, axes = cornerplot(result)
+
+        points = np.array(result['weighted_samples']['points'])
+        log_w = np.log(np.array(result['weighted_samples']['weights']))
+        log_like = np.array(result['weighted_samples']['logl'])
 
     if args.fitter == "dynesty":
         # --- Dynesty ---
@@ -135,9 +130,10 @@ if __name__ == "__main__":
                                                 bound='multi', sample="unif",
                                                 walks=48)
         dsampler.run_nested(n_effective=1000, dlogz_init=0.05)
-        from dynesty import plotting as dyplot
-        fig, axes = dyplot.cornerplot(dsampler.results, labels=[r"$\phi_*$", r"L$_*$", r"$\alpha$"], truths=qq_true)
-        fig.savefig("jof-posteriors-dynesty.png")
+
+        points = dsampler.results["samples"]
+        log_w = dsampler.results["logwt"]
+        log_like = dsampler.results["logl"]
 
     if args.fitter == "emcee":
         # --- emcee ---
@@ -157,6 +153,10 @@ if __name__ == "__main__":
         sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobfn)
         sampler.run_mcmc(initial, niter, progress=True)
 
+        points = sampler.flatchain
+        log_w = None
+        log_like = sampler.flatlnprobability
+
     if args.fitter == "brute":
         # -- Brute Force on a grid ---
         assert (not args.evolving)
@@ -169,19 +169,45 @@ if __name__ == "__main__":
         for i, qq in enumerate(qqs):
             lnp[i] = lnprobfn(qq)
 
-        p = np.exp(lnp - lnp.max())
-        p[~np.isfinite(p)] = 0
-        fig, ax = pl.subplots()
-        ax.clear()
-        ax.hexbin(np.log10(qqs[:, 0]), -2.5 * np.log10(qqs[:, 1]), C=p, gridsize=25)
-        ax.set_xlabel(r"$\phi_{*}$")
-        #ax.set_xscale("log")
-        ax.set_ylabel(r"M$_{*,\rm UV}$")
-        ax.plot(np.log10(qq_true[0]), -2.5 * np.log10(qq_true[1]), "ro")
-        fig, ax = pl.subplots()
-        ax.clear()
-        ax.hexbin(qqs[:, 2], -2.5 * np.log10(qqs[:, 1]), C=p, gridsize=25)
-        ax.set_xlabel(r"$\alpha$")
-        #ax.set_xscale("log")
-        ax.set_ylabel(r"M$_{*,\rm UV}$")
-        ax.plot(qq_true[2], -2.5 * np.log10(qq_true[1]), "ro")
+        points = qq
+        log_w = None
+        log_like = lnp
+
+    # ---------------
+    # --- Plotting ---
+    # ---------------
+
+    import corner
+    mle = points[np.argmax(log_like)]
+    ndim = points.shape[1]
+    fig, axes = pl.subplots(ndim, ndim, figsize=(6., 6.))
+    fig = corner.corner(points, weights=np.exp(log_w), bins=20, labels=params.free_params,
+                        plot_datapoints=False, plot_density=False,
+                        fill_contours=True, levels=(0.68, 0.95),
+                        range=np.ones(ndim) * 0.999, fig=fig,
+                        truths=mle, truth_color="red")
+    fig.suptitle(args.jof_datafile)
+    fig.savefig(f"jof-posteriors-{args.fitter}.png", dpi=300)
+    print(f"MAP={points[np.argmax(log_like)]}")
+
+    # - luminosity density -
+    from infer import transform
+    from lf import Maggie_to_cgs
+    qq = np.array([transform(p, evolving=args.evolving) for p in points])
+
+    #rhouv = np.array([lf.rhol(q=q) for q in qq])
+    rho_of_z = np.zeros([len(qq), len(veff.zgrid)])
+    for i, q in enumerate(qq):
+        lf.set_parameters(q)
+        dN_dV_dlogL = lf.evaluate(veff.loglgrid, veff.zgrid, in_dlogl=True)
+        dL_dV = dN_dV_dlogL * veff.dlogl[:, None] * (veff.lgrid[:, None] * Maggie_to_cgs)
+        rho_of_z[i] = dL_dV.sum(axis=0)
+
+    from util import quantile
+    rho_ptile = quantile(rho_of_z.T, [0.16, 0.5, 0.84], weights=np.exp(log_w))
+    rfig, rax = pl.subplots()
+    rax.plot(veff.zgrid, rho_of_z[np.argmax(log_like)], label="MAP", color="royalblue")
+    rax.plot(veff.zgrid, rho_ptile[:, 1], label="median", linestyle=":", color="royalblue")
+    rax.fill_between(veff.zgrid, rho_ptile[:, 0], y2=rho_ptile[:, -1], color="royalblue",
+                     alpha=0.5, label="16th-84th percentile")
+    rax.set_yscale("log")
