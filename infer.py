@@ -65,14 +65,18 @@ class DataSamples:
         flux_cols = [("flux_samples", float, (n_samples,))]
         return np.dtype([("id", int)] + sample_cols + flux_cols + truecols)
 
-    def show(self, n_s=15, **plot_kwargs):
-        fig, ax = pl.subplots()
+    def show(self, n_s=15, ax=None, **plot_kwargs):
+        if ax is None:
+            fig, ax = pl.subplots()
+        else:
+            fig = None
         ax.plot(self.all_samples["zred_true"], self.all_samples["logl_true"], "ro",
                 zorder=20)
         for d in self.all_samples:
             ax.plot(d["zred_samples"][:n_s], d["logl_samples"][:n_s],
                     marker=".", linestyle="", color='gray')
-        fig.savefig("mock_samples.png")
+        if fig is not None:
+            fig.savefig("mock_samples.png")
         return fig, ax
 
     def to_fits(self, fitsfilename):
@@ -84,13 +88,12 @@ class DataSamples:
 
 
 def make_mock(loglgrid, zgrid, omega,
-              q_true,
+              q_true, lf=EvolvingSchechter(),
               n_samples=100,
               sigma_logz=0.1, sigma_flux=1/maggies_to_nJy,
               completeness_kwargs={},
               selection_kwargs={}):
 
-    lf = EvolvingSchechter()
     lf.set_parameters(q_true)
     veff = construct_effective_volume(loglgrid, zgrid, omega,
                                       completeness_kwargs=completeness_kwargs,
@@ -144,17 +147,14 @@ def sample_mock_noise(logl, zred, n_samples=1,
 # Log likelihood L(data|q)
 # ------------------------
 
-def transfrom(qq, lf=None):
+def transform(qq, lf=None, evolving=False):
     """Transform from sampling parameters to evolving LF parameters
     """
-    # non-evolving
-    q = np.array([0, 0, 10**qq[0], 0, 0, 10**qq[1], qq[2]])
-
-    if False:
-        # fractional change in linear parameter
-        delta_z = veff.zgrid.max() - veff.zgrid.mean()
-        p0 = 10**qq[0]
-        p1 = (qq[1] - 1.0) * p0 * delta_z
+    if evolving:
+        q = qq
+    else:
+        # non-evolving
+        q = np.array([qq[0], 0, qq[1], 0, qq[2]])
 
     if False:
         # transform from knots
@@ -167,7 +167,8 @@ def transfrom(qq, lf=None):
     return q
 
 
-def lnlike(qq, data=None, veff=None, lf=EvolvingSchechter(), fast=True):
+def lnlike(qq, data=None, veff=None, fast=True,
+           lf=EvolvingSchechter(), evolving=False):
     """
     Parameters
     ----------
@@ -184,7 +185,7 @@ def lnlike(qq, data=None, veff=None, lf=EvolvingSchechter(), fast=True):
     """
     null = -np.inf
 
-    q = transform(qq)
+    q = transform(qq, evolving=evolving)
 
     debug = f"q=np.array([{', '.join([str(qi) for qi in q])}])"
     debug += f"\nqq=np.array([{', '.join([str(qi) for qi in qq])}])"
@@ -238,6 +239,7 @@ if __name__ == "__main__":
                         choices=["none", "dynesty", "emcee", "brute",
                                  "ultranest", "nautilus"])
     parser.add_argument("--n_samples", type=int, default=1)
+    parser.add_argument("--evolving", type=int, default=0)
     args = parser.parse_args()
     args.omega = (args.area * arcmin**2).to("steradian").value
     sampler_kwargs = dict()
@@ -248,44 +250,66 @@ if __name__ == "__main__":
     # grid of log luminosity
     loglgrid = np.linspace(args.loglmin, args.loglmax, args.nl)
 
+    # ---------------------------
+    # --- Set up model and priors
+    # ---------------------------
+    lf = EvolvingSchechter()
+    pdict = dict(phi0=Uniform(mini=-5, maxi=-3),
+                 phi1=Uniform(mini=-3, maxi=3),
+                 lstar0=Uniform(mini=(19 / 2.5), maxi=(22 / 2.5)),
+                 lstar1=Uniform(mini=-3, maxi=3),
+                 alpha=Uniform(mini=-2.5, maxi=-1.5))
+    if args.evolving:
+        param_names = ["phi0", "phi1", "lstar0", "lstar1", "alpha"]
+    else:
+        param_names = ["phi0", "lstar0", "alpha"]
+    params = Parameters(param_names, pdict)
+
     # -------------------
     # --- Truth ---
     # -------------------
-    q_true = np.array([0.0, 0.0, 1e-4, 0, 0.0, 10**(21 / 2.5), -1.7])
-    #z_knots = np.array([zgrid.min(), zgrid.mean(), zgrid.max()])
-    #qq_true = lf.coeffs_to_knots(q_true, z_knots)
-    #assert np.allclose(lf.knots_to_coeffs(qq, z_knots), q_true)
-    qq_true = np.array([np.log10(q_true[2]), np.log10(q_true[5]), q_true[6]])
+    q_true = np.array([-4, 0, (21 / 2.5), 0, -1.7])
+    if args.evolving:
+        qq_true = q_true
+    else:
+        qq_true = np.array([q_true[0], q_true[2], q_true[4]])
 
     # -----------------------
     # --- build mock data ---
     # -----------------------
 
-    mock, veff = make_mock(loglgrid, zgrid, args.omega, q_true,
-                           sigma_logz=0.01,
+    mock, veff = make_mock(loglgrid, zgrid, args.omega,
+                           q_true, lf=lf,
+                           sigma_logz=0.05,
                            n_samples=args.n_samples)
     print(f"{len(mock.all_samples)} objects drawn from this LF x Veff")
-    mock.show()
+    dN, _ = lf.n_effective(veff)
+
+    fig, ax = pl.subplots()
+    ax.imshow(dN, origin="lower", cmap="Blues", alpha=0.5,
+              extent=[zgrid.min(), zgrid.max(), loglgrid.min(), loglgrid.max()],
+              aspect="auto")
+    _, ax = mock.show(ax=ax)
+    fig.savefig("mock_samples.png", dpi=300)
     mock.to_fits("mock_data.fits")
 
-    # ---------------------------
-    # --- Set up model and priors
-    # ---------------------------
 
-    lf = EvolvingSchechter()
-    priors = dict(#phi2=LogUniform(mini=1e-5, maxi=1e-3),
-                  #phi1=LogUniform(mini=1e-5, maxi=1e-3),
-                  phi0=Uniform(mini=-5, maxi=-3),
-                  #lstar2=LogUniform(mini=10**(19/2.5), maxi=10**(22/2.5)),
-                  #lstar1=LogUniform(mini=10**(19/2.5), maxi=10**(22/2.5)),
-                  lstar0=Uniform(mini=(19 / 2.5), maxi=(22 / 2.5)),
-                  alpha=Uniform(mini=-2.5, maxi=-1.5))
-    #param_names = ["phi2", "phi1", "phi0", "lstar2", "lstar1", "lstar0", "alpha"]
-    param_names = ["phi0", "lstar0", "alpha"]
-    params = Parameters(param_names, priors)
+    # ---------------
+    # --- Fitting ---
+    # ---------------
     assert np.isfinite(params.prior_product(qq_true))
+    lnprobfn = partial(lnlike, data=mock, lf=lf, veff=veff, evolving=args.evolving)
 
-    lnprobfn = partial(lnlike, data=mock, lf=lf, veff=veff)
+    if args.evolving:
+        def lnprobfn_dict(param_dict):
+            qq = np.array([param_dict['phi0'], param_dict['phi1'],
+                           param_dict['lstar0'], param_dict['lstar1'],
+                           param_dict['alpha']])
+            return lnprobfn(qq)
+    else:
+        def lnprobfn_dict(param_dict):
+            qq = np.array([param_dict['phi0'], param_dict['lstar0'], param_dict['alpha']])
+            return lnprobfn(qq)
 
 
     # -------------------
@@ -295,11 +319,8 @@ if __name__ == "__main__":
         from nautilus import Prior, Sampler
 
         prior = Prior()
-        for k, p in priors.items():
-            prior.add_parameter(k, dist=(p.params['mini'], p.params['maxi']))
-        def lnprobfn_dict(param_dict):
-            qq = np.array(np.array([param_dict['phi0'], param_dict['lstar0'], param_dict['alpha']]))
-            return lnprobfn(qq)
+        for k in params.param_names:
+            prior.add_parameter(k, dist=(pdict[k].params['mini'], pdict[k].params['maxi']))
 
         sampler = Sampler(prior, lnprobfn_dict, n_live=1000)
         sampler.run(verbose=False)
@@ -317,16 +338,19 @@ if __name__ == "__main__":
 
     if args.fitter == "ultranest":
         # --- ultranest ---
-        lnprobfn = partial(lnlike, data=mock, lf=lf, veff=veff)
         import ultranest
         sampler = ultranest.ReactiveNestedSampler(params.free_params, lnprobfn, params.prior_transform)
         result = sampler.run(**sampler_kwargs)
-        from ultranest.plot import cornerplot
-        fig, axes = cornerplot(result)
+        fig, axes = pl.subplots(ndim, ndim, figsize=(5., 5.))
+        fig = corner.corner(points, weights=np.exp(log_w), bins=20, labels=prior.keys,
+                            plot_datapoints=False, plot_density=False,
+                            fill_contours=True, levels=(0.68, 0.95),
+                            range=np.ones(ndim) * 0.999, fig=fig,
+                            truths=qq_true, truth_color="red")
+        fig.savefig("posteriors-ultranest.png", dpi=300)
 
     if args.fitter == "dynesty":
         # --- Dynesty ---
-        lnprobfn = partial(lnlike, data=mock, lf=lf, veff=veff)
         import dynesty
         dsampler = dynesty.DynamicNestedSampler(lnprobfn, params.prior_transform,
                                                 len(params.free_params),
@@ -340,6 +364,7 @@ if __name__ == "__main__":
 
     if args.fitter == "emcee":
         # --- emcee ---
+        assert (not args.evolving)
         def lnposterior(qq, params=None, data=None, lf=None, veff=None):
             # need to include the prior for emcee
             lnp = params.prior_product(qq)
@@ -357,6 +382,7 @@ if __name__ == "__main__":
 
     if args.fitter == "brute":
         # -- Brute Force on a grid ---
+        assert (not args.evolving)
         lnprobfn = partial(lnlike, data=mock, lf=lf, veff=veff)
         from itertools import product
         phi_grid = 10**np.linspace(-5, -3, 30)

@@ -70,8 +70,8 @@ def create_parser():
 
     #Evovling luminosity function parameters
     parser.add_argument('--lf_params',
-        nargs='+',
-        default=[0.0, 0.0, 1e-4, 0, 0, 10**(21 / 2.5), -1.8],
+        nargs=5,
+        default=[-4, 0, (21 / 2.5), 0, -1.8],
         type=float,
         help='LF parameters')
 
@@ -128,43 +128,19 @@ class EvolvingSchechter:
     lstar: luminosity of the exponential cutoff, in absolute maggies (i.e., 10**(-0.4M_{AB}))
     alpha : power law slope below lstar
     """
-    def __init__(self, zref=14, order=2):
+    def __init__(self, zref=14, order=1):
         self.zref = zref
-        self.order = 2
+        self.order = order
 
         # determines mapping from theta vector to parameters
-        self._phi_index = [0, 1, 2]
-        self._lstar_index = [3, 4, 5]
-        self._alpha_index = [6]
+        self._phi_index = [0, 1]
+        self._lstar_index = [2, 3]
+        self._alpha_index = [4]
 
     def set_parameters(self, q):
         self._phis = q[self._phi_index]
         self._lstars = q[self._lstar_index]
         self._alphas = q[self._alpha_index]
-
-    def knots_to_coeffs(self, qq, z_knots):
-        # HACK
-        # transform from knot values to evolutionary params
-        phi_knot = qq[self._phi_index]
-        lstar_knot = qq[self._lstar_index]
-        zz = np.vander(z_knots - self.zref, 3)
-        phis = np.linalg.solve(zz, phi_knot)
-        lstars = np.linalg.solve(zz, lstar_knot)
-        q = qq.copy()
-        q[self._phi_index] = phis[:]
-        q[self._lstar_index] = lstars[:]
-        return q
-
-    def coeffs_to_knots(self, q, z_knots):
-        # HACK
-        # transform from evolutionary params to knots
-        self.set_parameters(q)
-        self.set_redshift(z_knots)
-        qq = np.zeros_like(q)
-        qq[self._phi_index] = self.phi
-        qq[self._lstar_index] = self.lstar
-        qq[self._alpha_index] = self.alpha[0]
-        return qq
 
     def set_redshift(self, z=None):
         """Use the model parameter values to compute the LF parameters at the
@@ -172,15 +148,17 @@ class EvolvingSchechter:
         """
         if z is None:
             z = self.zref
-        zz = z - self.zref
-        # print(f'zz.shape {zz.shape}')
 
-        # by default, vander decreases order
-        # with increasing index
-        self.phi = np.dot(np.vander(zz, len(self._phi_index)), self._phis)
-        self.lstar = np.dot(np.vander(zz, len(self._lstar_index)), self._lstars)
-        self.alpha = np.dot(np.vander(zz, len(self._alpha_index)), self._alphas)
-        # print(f'self.phi.shape {self.phi.shape}')
+        self.alpha = self._alphas
+
+        # --- phi = phi_0 \, (1+z)^\beta ----
+        zz = np.log10((1 + z) / (1 + self.zref))
+
+        logphi = self._phis[0] + self._phis[1] * zz
+        self.phi = 10**logphi
+
+        loglstar = self._lstars[0] + self._lstars[1] * zz
+        self.lstar = 10**loglstar
 
     def evaluate(self, L, z, grid=True, in_dlogl=False):
         """
@@ -231,9 +209,8 @@ class EvolvingSchechter:
         return dN, dV
 
     def rhol(self, z=None, q=None, lmin=6.8, lmax=20.0):
-        """Compute the integrated luminosity density 
-        between lmin and lmax as a function
-        of redshift
+        """Compute the integrated luminosity density
+        between lmin and lmax as a function of redshift
 
         Returns
         -------
@@ -265,7 +242,7 @@ class EvolvingSchechter:
         return fconv*self.phi*self.lstar*gamma(n)*(g1-g0)
 
     def nl(self, z=None, q=None, lmin=7.2, lmax=20.0):
-        """Compute the integrated number density 
+        """Compute the integrated number density
         between lmin and lmax as a function
         of redshift
 
@@ -286,7 +263,7 @@ class EvolvingSchechter:
         #print(f'lstar {self.lstar}')
         #print(f'xmin {xmin}')
         #print(f'xmax {xmax}')
-        n = self.alpha+1
+        n = self.alpha + 1
         #g0 = gammainc(n,xmin)  #\Gamma(alpha+1,L/Lstar)
         #print(n,xmin,xmax)
         #g0 = uppergamma(n,xmin)
@@ -302,7 +279,6 @@ class EvolvingSchechter:
         #print(f'n {n} gamma({gamma(n)}) {gamma(n)}')
         #return self.phi*gamma(n)*(g1-g0)
         return self.phi*gammasgn(n)*(g1-g0)
-
 
     def record_parameter_evolution(self, zgrid):
         """record the LF parameter evolution to an ascii table
@@ -377,6 +353,56 @@ class EvolvingSchechter:
         ax.set_ylabel(r"M$_{\rm UV}$")
         fig.savefig("lf_samples.png")
         return loglums, zs
+
+
+class EvolvingSchechterExp(EvolvingSchechter):
+
+    def set_redshift(self, z=None):
+        """Use the model parameter values to compute the LF parameters at the
+        given redshifts, and cache them
+        """
+        if z is None:
+            z = self.zref
+
+        self.alpha = self._alphas
+
+        # --- phi = phi_0 \, \exp{\beta \, \Delta z} ---
+        zz = z - self.zref
+
+        logphi = self._phis[0] + self._phis[1] * zz
+        self.phi = 10**logphi
+
+        loglstar = self._lstars[0] + self._lstars[1] * zz
+        self.lstar = 10**loglstar
+
+
+class EvolvingSchecterPoly(EvolvingSchechter):
+
+    def __init__(self, zref=14, order=2):
+        self.zref = zref
+        self.order = order
+
+        # determines mapping from theta vector to parameters
+        self._phi_index = slice(0, order)
+        self._lstar_index = slice(order, 2*order)
+        self._alpha_index = slice(2*order, None)
+
+    def set_redshift(self, z=None):
+        """Use the model parameter values to compute the LF parameters at the
+        given redshifts, and cache them
+        """
+        if z is None:
+            z = self.zref
+
+        # --- phi = pho0 + a_1 \, \Delta z + a_2 \, (\Delta z)^2---
+        zz = z - self.zref
+        # print(f'zz.shape {zz.shape}')
+        # by default, vander decreases order
+        # with increasing index
+        self.phi = np.dot(np.vander(zz, len(self._phi_index)), self._phis)
+        self.lstar = np.dot(np.vander(zz, len(self._lstar_index)), self._lstars)
+        self.alpha = np.dot(np.vander(zz, len(self._alpha_index)), self._alphas)
+        # print(f'self.phi.shape {self.phi.shape}')
 
 
 class EffectiveVolumeGrid:
@@ -546,7 +572,7 @@ if __name__ == "__main__":
 
     dN, dV = s.n_effective(veff)
     N_bar = dN.sum()  # Average number of galaxies in survey
-    V_bar = dV[0,:].sum()  # Effective volume of the survey in Mpc^3
+    V_bar = dV[0, :].sum()  # Effective volume of the survey in Mpc^3
 
     if (args.verbose):
         print(f'Area in arcmin^2 = {args.area}')
