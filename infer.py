@@ -12,7 +12,8 @@ from lf import EvolvingSchechter, sample_twod
 from lf import construct_effective_volume
 from lf import lum_to_mag, mag_to_lum, arcmin
 
-from priors import Parameters, LogUniform, Uniform, Normal, LogNormal
+from priors import Parameters, Uniform
+
 
 maggies_to_nJy = 3631e9
 
@@ -383,7 +384,6 @@ if __name__ == "__main__":
     if args.fitter == "brute":
         # -- Brute Force on a grid ---
         assert (not args.evolving)
-        lnprobfn = partial(lnlike, data=mock, lf=lf, veff=veff)
         from itertools import product
         phi_grid = 10**np.linspace(-5, -3, 30)
         lstar_grid = 10**np.linspace(19/2.5, 22/2.5, 30)

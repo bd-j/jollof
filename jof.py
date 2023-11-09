@@ -19,10 +19,16 @@ from priors import Parameters, Uniform
 if __name__ == "__main__":
 
     parser = create_parser()
-    parser.add_argument("--fitter", type=str, default="none",
+    parser.add_argument("--fitter", type=str,
+                        default="none",
                         choices=["none", "dynesty", "emcee", "brute",
                                  "ultranest", "nautilus"])
-    parser.add_argument("--n_samples", type=int, default=1)
+    parser.add_argument("--n_samples", type=int,
+                        default=1)
+    parser.add_argument("--evolving", type=int,
+                        default=0)
+    parser.add_argument("--jof_datafile", type=str,
+                        default="data/samples.v094.11072023.fits")
     args = parser.parse_args()
     args.omega = (args.area * arcmin**2).to("steradian").value
     sampler_kwargs = dict()
@@ -33,21 +39,10 @@ if __name__ == "__main__":
     # grid of log luminosity
     loglgrid = np.linspace(args.loglmin, args.loglmax, args.nl)
 
-    # -------------------
-    # --- Initial ---
-    # -------------------
-    q_true = np.array([0.0, 0.0, 1e-4, 0, 0.0, 10**(21 / 2.5), -1.7])
-    #z_knots = np.array([zgrid.min(), zgrid.mean(), zgrid.max()])
-    #qq_true = lf.coeffs_to_knots(q_true, z_knots)
-    #assert np.allclose(lf.knots_to_coeffs(qq, z_knots), q_true)
-    qq_true = np.array([np.log10(q_true[2]), np.log10(q_true[5]), q_true[6]])
-
     # -----------------------
     # --- read data ---
     # -----------------------
-    veff = construct_effective_volume(loglgrid, zgrid, omega=args.omega,
-                                      as_interpolator=True)
-    jof = DataSamples(filename="data/samples.v094.11072023.fits",
+    jof = DataSamples(filename=args.jof_datafile,
                       ext="ZSAMP",
                       n_samples=args.n_samples)
     sfig, sax = jof.show(n_s=jof.n_samples, filename="jof_samples.png")
@@ -56,38 +51,57 @@ if __name__ == "__main__":
     sfig.savefig("jof_samples.png", dpi=300)
     pl.close(sfig)
 
+    veff = construct_effective_volume(loglgrid, zgrid, omega=args.omega,
+                                      as_interpolator=True)
+
     # ---------------------------
     # --- Set up model and priors
     # ---------------------------
-
     lf = EvolvingSchechter()
-    priors = dict(#phi2=LogUniform(mini=1e-5, maxi=1e-3),
-                  #phi1=LogUniform(mini=1e-5, maxi=1e-3),
-                  phi0=Uniform(mini=-6, maxi=-3),
-                  #lstar2=LogUniform(mini=10**(19/2.5), maxi=10**(22/2.5)),
-                  #lstar1=LogUniform(mini=10**(19/2.5), maxi=10**(22/2.5)),
-                  lstar0=Uniform(mini=(19 / 2.5), maxi=(23 / 2.5)),
-                  alpha=Uniform(mini=-2.5, maxi=-1.5))
-    #param_names = ["phi2", "phi1", "phi0", "lstar2", "lstar1", "lstar0", "alpha"]
-    param_names = ["phi0", "lstar0", "alpha"]
-    params = Parameters(param_names, priors)
+    pdict = dict(phi0=Uniform(mini=-5, maxi=-3),
+                 phi1=Uniform(mini=-3, maxi=3),
+                 lstar0=Uniform(mini=(19 / 2.5), maxi=(22 / 2.5)),
+                 lstar1=Uniform(mini=-3, maxi=3),
+                 alpha=Uniform(mini=-2.5, maxi=-1.5))
+    if args.evolving:
+        param_names = ["phi0", "phi1", "lstar0", "lstar1", "alpha"]
+    else:
+        param_names = ["phi0", "lstar0", "alpha"]
+    params = Parameters(param_names, pdict)
+
+    # -------------------
+    # --- Initial ---
+    # -------------------
+    q_true = np.array([-4, 0, (21 / 2.5), 0, -1.7])
+    if args.evolving:
+        qq_true = q_true
+    else:
+        qq_true = np.array([q_true[0], q_true[2], q_true[4]])
+
+    # -------------------
+    # --- lnprobfn -------
+    # -------------------
     assert np.isfinite(params.prior_product(qq_true))
+    lnprobfn = partial(lnlike, data=jof, lf=lf, veff=veff, evolving=args.evolving)
 
-    lnprobfn = partial(lnlike, data=jof, lf=lf, veff=veff)
+    if args.evolving:
+        def lnprobfn_dict(param_dict):
+            qq = np.array([param_dict['phi0'], param_dict['phi1'],
+                           param_dict['lstar0'], param_dict['lstar1'],
+                           param_dict['alpha']])
+            return lnprobfn(qq)
+    else:
+        def lnprobfn_dict(param_dict):
+            qq = np.array([param_dict['phi0'], param_dict['lstar0'], param_dict['alpha']])
+            return lnprobfn(qq)
 
 
-    # -------------------
-    # --- Fitting -------
-    # -------------------
     if args.fitter == "nautilus":
         from nautilus import Prior, Sampler
 
         prior = Prior()
-        for k, p in priors.items():
-            prior.add_parameter(k, dist=(p.params['mini'], p.params['maxi']))
-        def lnprobfn_dict(param_dict):
-            qq = np.array(np.array([param_dict['phi0'], param_dict['lstar0'], param_dict['alpha']]))
-            return lnprobfn(qq)
+        for k in params.param_names:
+            prior.add_parameter(k, dist=(pdict[k].params['mini'], pdict[k].params['maxi']))
 
         sampler = Sampler(prior, lnprobfn_dict, n_live=1000)
         sampler.run(verbose=False)
@@ -127,6 +141,7 @@ if __name__ == "__main__":
 
     if args.fitter == "emcee":
         # --- emcee ---
+        assert (not args.evolving)
         def lnposterior(qq, params=None, data=None, lf=None, veff=None):
             # need to include the prior for emcee
             lnp = params.prior_product(qq)
@@ -144,6 +159,7 @@ if __name__ == "__main__":
 
     if args.fitter == "brute":
         # -- Brute Force on a grid ---
+        assert (not args.evolving)
         from itertools import product
         phi_grid = 10**np.linspace(-5, -3, 30)
         lstar_grid = 10**np.linspace(19/2.5, 22/2.5, 30)
