@@ -28,7 +28,7 @@ def create_parser():
 
     #Minimum redshift
     parser.add_argument('--zmin',
-        default=12.0,
+        default=11.5,
         metavar='zmin',
         type=float,
         help='Minimum redshift to model (default: 12)')
@@ -429,6 +429,108 @@ class EffectiveVolumeGrid:
     def data(self):
         return self.values
 
+class CompletenessGrid:
+    """Thin wrapper on RegularGridInterpolator that keeps track of the grid points and grid values
+    """
+    def __init__(self, comp, xgrid, ygrid, zgrid=None):
+        self.values = comp
+        self.xgrid  = xgrid
+        self.ygrid  = ygrid
+        self.dy = np.gradient(ygrid)
+        self.dx = np.gradient(xgrid)
+        if(zgrid is not None):
+            self.zgrid = zgrid
+            self.dz = np.gradient(zgrid)
+            self.interp = RegularGridInterpolator((xgrid, ygrid, zgrid), comp,
+                                              bounds_error=False,
+                                              fill_value=None)
+        else:
+            self.interp = RegularGridInterpolator((xgrid, ygrid), comp,
+                                              bounds_error=False,
+                                              fill_value=None)
+
+    def __call__(self, *args, **kwargs):
+        return self.interp(*args, **kwargs)
+
+    @property
+    def data(self):
+        return self.values
+
+# ------------------------------
+# Plot detection completeness grid
+# ------------------------------
+def plot_detection(mab,lrh,comp):
+    f,ax = plt.subplots(1,1,figsize=(6,6))
+    dmab = mab[1]-mab[0]
+    dlrh = lrh[1]-lrh[0]
+    x_min = mab[0]-0.5*dmab
+    x_max = mab[-1]+0.5*dmab
+    y_min = lrh[0]-0.5*dlrh
+    y_max = lrh[-1]+0.5*dlrh
+
+    #im = ax.imshow(comp.T,origin='lower',extent= \
+    x,y = np.meshgrid(mab,lrh)
+    im = ax.imshow(comp((x,y)),origin='lower',extent= \
+        [x_min,x_max,y_min,y_max])
+    ax.set_xlabel('Apparent Magnitude [AB]')
+    ax.set_ylabel('Log10 Rhalf [arcsec]')
+    ax.set_xlim([x_min,x_max])
+    ax.set_ylim([y_min,y_max])
+    ax.set_aspect((x_max-x_min)/(y_max-y_min))
+    cb = f.colorbar(im,ax=ax,label='Completeness',fraction=0.046, pad=0.04)
+    print('Writing detection_completeness.png.')
+    plt.savefig('detection_completeness.png',bbox_inches='tight',dpi=400)
+
+# ------------------------------
+# Plot selection completeness grid
+# ------------------------------
+def plot_selection(z,muv,comp):
+    f,ax = plt.subplots(1,1,figsize=(6,6))
+    dx = z[1]-z[0]
+    dy = muv[1]-muv[0]
+    x_min = z[0]-0.5*dx
+    x_max = z[-1]+0.5*dx
+    y_min = muv[0]-0.5*dy
+    y_max = muv[-1]+0.5*dy
+
+#    im = ax.imshow(comp.T,origin='lower',extent= \
+    x,y = np.meshgrid(z,muv)
+    im = ax.imshow(comp((x,y)),origin='lower',extent= \
+        [x_min,x_max,y_min,y_max])
+    ax.set_xlabel(r'Redshift $z$')
+    ax.set_ylabel('Absolute MUV')
+    ax.set_xlim([x_min,x_max])
+    ax.set_ylim([y_min,y_max])
+    ax.set_aspect((x_max-x_min)/(y_max-y_min))
+    cb = f.colorbar(im,ax=ax,label='Completeness',fraction=0.046, pad=0.04)
+    print('Writing selection_completeness.png.')
+    plt.savefig('selection_completeness.png',bbox_inches='tight',dpi=400)
+
+# ------------------------------
+# Plot effective volume
+# ------------------------------
+def plot_veff(loglgrid,zgrid,veff):
+    f,ax = plt.subplots(1,1,figsize=(6,6))
+    dx = zgrid[1]-zgrid[0]
+    dy = loglgrid[1]-loglgrid[0]
+    x_min = zgrid[0]-0.5*dx
+    x_max = zgrid[-1]+0.5*dx
+    y_min = loglgrid[0]-0.5*dy
+    y_max = loglgrid[-1]+0.5*dy
+
+#    im = ax.imshow(comp.T,origin='lower',extent= \
+    x,y = np.meshgrid(zgrid,loglgrid)
+    im = ax.imshow(veff((y,x)),origin='lower',extent= \
+        [x_min,x_max,y_min,y_max])
+    ax.set_xlabel(r'Redshift $z$')
+    ax.set_ylabel('Log L')
+    ax.set_xlim([x_min,x_max])
+    ax.set_ylim([y_min,y_max])
+    ax.set_aspect((x_max-x_min)/(y_max-y_min))
+    cb = f.colorbar(im,ax=ax,label='Effective Volume',fraction=0.046, pad=0.04)
+    print('Writing effective_volume.png.')
+    plt.savefig('effective_volume.png',bbox_inches='tight',dpi=400)
+
 # ------------------------------
 # sigmoid to model completeness
 # ------------------------------
@@ -440,7 +542,9 @@ def sigmoid(x):
 # ------------------------------
 def construct_effective_volume(loglgrid, zgrid, omega,
                      completeness_kwargs={},
-                     selection_kwargs={},
+                     selection_kwargs={},fake_flag=False,comp_sel=None,comp_det=None,
+                     muv_min=27,muv_max=32,
+                     f_cover = 0.7785,
                      as_interpolator=True):
     """compute this on a grid of z and Muv
 
@@ -453,18 +557,73 @@ def construct_effective_volume(loglgrid, zgrid, omega,
     """
     # Compute dV/dz (Mpc^3/redshift)
     volume = omega * cosmo.differential_comoving_volume(zgrid).value
-    muv = lum_to_mag(loglgrid[:, None], zgrid)
-    # Fake completeness function
-    completeness = completeness_function(muv, **completeness_kwargs)
-    #print(f'Completeness {completeness.shape} {completeness[0]}')
+    muv = lum_to_mag(loglgrid[:, None], zgrid) #apparent
 
-    # Fake selection function
-    selection_function = completeness * (muv < 31)
 
-    veff = selection_function * volume
+    #use a fake completeness or simulated completeness?
+    
+    if(fake_flag):
+
+        # Fake completeness function
+        completeness = completeness_function(muv, **completeness_kwargs)
+        #print(f'Completeness {completeness.shape} {completeness[0]}')
+
+        # Fake selection function
+        selection_function = completeness * (muv < 31)
+
+        veff = selection_function * volume
+        print(veff.shape)
+
+    else:
+
+        #initialize veff
+        veff = volume
+
+        #apply detection completeness
+        if(comp_det is not None):
+
+            #use an actual completeness function
+            mab_clip_grid = np.clip(muv,muv_min,muv_max)
+
+            #fake size
+            #lrh = np.full_like(zgrid,-1.5)
+
+            #apply completeness
+            cd = comp_det((mab_clip_grid,-1.5)) #pretend all sizes are logrh<=-1.5
+            veff = cd*veff # apply completeness
+
+            #apply covering factor
+            veff *= f_cover
+
+        #apply selection completeness
+        if(comp_sel is not None):
+
+            x,y = np.meshgrid(zgrid,-2.5*loglgrid[:, None])
+            print(x.shape)
+            print(y.shape)
+            cs = comp_sel((x,y))
+            #print(f'cs.shape {cs.shape}')
+
+
+            #plt.clf()
+            #plt.imshow(cs,origin='lower')
+            #plt.savefig('test.png')
+            #exit()
+
+            #apply completeness
+            veff = cs*veff # apply completeness
+
+
+            #apply covering factor
+            veff *= f_cover
+
+
+
+    #create an interpolator
     if as_interpolator:
         veff = EffectiveVolumeGrid(loglgrid, zgrid, veff)
 
+    #return the grid or interpolator
     return veff
 
 # --------------------
