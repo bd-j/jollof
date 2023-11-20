@@ -51,8 +51,10 @@ class DataSamples:
         if(replicate>0):
             print(f'Replicating the sample {replicate} times.')
             print(f'all_samples.shape {all_samples.shape} all_samples.keys() {all_samples[0].dtype}')
+            new_samples = all_samples.copy()
             for i in range(replicate):
-                all_samples = np.append(all_samples,all_samples)
+                new_samples = np.append(new_samples,all_samples)
+            all_samples = new_samples
             print(f'all_samples.shape {all_samples.shape} all_samples.keys() {all_samples[0].dtype}')
 
 
