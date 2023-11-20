@@ -39,8 +39,24 @@ if __name__ == "__main__":
                         default=None)
     parser.add_argument("--sample_output", type=str,
                         default='samples.fits')
-
+    parser.add_argument("--replicate", type=int,
+                        default=0)
+    #create parser
     args = parser.parse_args()
+
+    #print important arguments to the
+    #screen
+    if(args.verbose):
+        print(f'Number of samples {args.n_samples}')
+        print(f'Minimum redshift {args.zmin}')
+        print(f'Maximum redshift {args.zmax}')
+        print(f'Minimum Muv {args.loglmin*-2.5}')
+        print(f'Maximum Muv {args.loglmax*-2.5}')
+        print(f'Replicate input objects? {args.replicate}')
+
+
+
+    #compute area
     args.omega = (args.area * arcmin**2).to("steradian").value
     sampler_kwargs = dict()
 
@@ -55,10 +71,10 @@ if __name__ == "__main__":
     # -----------------------
     jof = DataSamples(filename=args.jof_datafile,
                       ext="ZSAMP",
-                      n_samples=args.n_samples)
+                      n_samples=args.n_samples, replicate=args.replicate)
     sfig, sax = jof.show(n_s=jof.n_samples, filename="jof_samples.png")
-    sax.set_ylim(jof.all_samples["logl_samples"].min(), jof.all_samples["logl_samples"].max())
-    sax.set_xlim(jof.all_samples["zred_samples"].min(), jof.all_samples["zred_samples"].max())
+    sax.set_ylim(0.95*jof.all_samples["logl_samples"].min(), 1.1*jof.all_samples["logl_samples"].max())
+    sax.set_xlim(0.95*jof.all_samples["zred_samples"].min(), 1.1*jof.all_samples["zred_samples"].max())
     sfig.savefig("jof_samples.png", dpi=300)
     pl.close(sfig)
 
@@ -109,10 +125,12 @@ if __name__ == "__main__":
     lf = EvolvingSchechter()
     #pdict = dict(phi0=Uniform(mini=-5, maxi=-3),
                  #lstar0=Uniform(mini=(17 / 2.5), maxi=(22 / 2.5)),
-    pdict = dict(phi0=Uniform(mini=-6, maxi=-2),
-                 phi1=Uniform(mini=-3, maxi=3),
-                 lstar0=Uniform(mini=(17 / 2.5), maxi=(24 / 2.5)),
-                 lstar1=Uniform(mini=-3, maxi=3),
+    pdict = dict(  
+                 #phi0=Uniform(mini=-6, maxi=-2),
+                 phi0=Uniform(mini=-8, maxi=-2),\
+                 phi1=Uniform(mini=-3, maxi=3),\
+                 lstar0=Uniform(mini=(17 / 2.5), maxi=(24 / 2.5)),\
+                 lstar1=Uniform(mini=-3, maxi=3),\
                  alpha=Normal(mean=-2.0, sigma=0.1))
 #                 alpha=Uniform(mini=-2.5, maxi=-1.5))
 

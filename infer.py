@@ -23,17 +23,17 @@ class DataSamples:
     constrain the LF.  Optionally include flux samples to incorporate k-correction effects or other
     """
 
-    def __init__(self, objects=None, filename=None, ext="SAMPLES", n_samples=1000):
+    def __init__(self, objects=None, filename=None, ext="SAMPLES", n_samples=1000, replicate=0):
 
         self.all_samples = None
         self.n_samples = n_samples
         if filename is not None:
-            self.all_samples = self.rectify_eazy(filename, ext)
+            self.all_samples = self.rectify_eazy(filename, ext, replicate=replicate)
             self.n_samples = len(self.all_samples[0]["zred_samples"])
         if objects is not None:
             self.add_objects(objects)
 
-    def rectify_eazy(self, filename, ext):
+    def rectify_eazy(self, filename, ext, replicate=0):
         table = Table.read(filename, hdu=ext)
         convert = dict(zred_samples=("z_samples", lambda x: x),
                        logl_samples=("MUV_samples", lambda x: -0.4 * x))
@@ -45,6 +45,17 @@ class DataSamples:
         all_samples = np.zeros(len(table), dtype=dtype)
         for n, (o, konvert) in convert.items():
             all_samples[:][n] = konvert(table[o][:, :self.n_samples])
+
+
+        #Add duplicate objects (for testing purposes)
+        if(replicate>0):
+            print(f'Replicating the sample {replicate} times.')
+            print(f'all_samples.shape {all_samples.shape} all_samples.keys() {all_samples[0].dtype}')
+            for i in range(replicate):
+                all_samples = np.append(all_samples,all_samples)
+            print(f'all_samples.shape {all_samples.shape} all_samples.keys() {all_samples[0].dtype}')
+
+
         return all_samples
 
     def add_objects(self, objects):
