@@ -249,7 +249,8 @@ def lnlike(qq, data=None, veff=None, fast=True,
 # ------------------------
 # Fitting
 # -----------------------
-def fit(params, lnprobfn, fitter="nautilus", sampler_kwargs=dict()):
+def fit(params, lnprobfn, verbose=False,
+        fitter="nautilus", sampler_kwargs=dict()):
 
     if fitter == "nautilus":
         from nautilus import Prior, Sampler
@@ -263,7 +264,7 @@ def fit(params, lnprobfn, fitter="nautilus", sampler_kwargs=dict()):
             else:
                 prior.add_parameter(k, dist=(pr.params['mini'], pr.params['maxi']))
         sampler = Sampler(prior, lnprobfn_dict, n_live=1000)
-        sampler.run(verbose=args.verbose)
+        sampler.run(versbose=verbose)
 
         points, log_w, log_like = sampler.posterior()
 
@@ -410,10 +411,11 @@ if __name__ == "__main__":
             qq = np.array([param_dict['phi0'], param_dict['lstar0'], param_dict['alpha']])
             return lnprobfn(qq)
 
-
-
-    points, log_w, log_like, sampler = fit(params, lnprobfn, fitter=args.fitter)
-
+    if args.fitter == "nautilus":
+        lnprob = lnprobfn_dict
+    else:
+        lnprob = lnprobfn
+    points, log_w, log_like, sampler = fit(params, lnprob, fitter=args.fitter)
 
     # ---------------
     # --- Plotting ---
