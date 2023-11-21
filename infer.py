@@ -6,6 +6,7 @@ import numpy as np
 import matplotlib.pyplot as pl
 from astropy.io import fits
 from astropy.table import Table
+from scipy.stats import norm
 
 from lf import create_parser
 from lf import EvolvingSchechter, sample_twod
@@ -160,7 +161,6 @@ def sample_mock_noise(logl, zred, n_samples=1,
 # ------------------------
 # Log likelihood L(data|q)
 # ------------------------
-
 def transform(qq, lf=None, evolving=False):
     """Transform from sampling parameters to evolving LF parameters
     """
@@ -246,6 +246,91 @@ def lnlike(qq, data=None, veff=None, fast=True,
     return lnp
 
 
+# ------------------------
+# Fitting
+# -----------------------
+def fit(params, lnprobfn, fitter="nautilus", sampler_kwargs=dict()):
+
+    if fitter == "nautilus":
+        from nautilus import Prior, Sampler
+
+        # we have to use the nautilus prior objects
+        prior = Prior()
+        for k in params.param_names:
+            pr = pdict[k]
+            if pr.name == "Normal":
+                prior.add_parameter(k, dist=norm(pr.params['mean'], pr.params['sigma']))
+            else:
+                prior.add_parameter(k, dist=(pr.params['mini'], pr.params['maxi']))
+        sampler = Sampler(prior, lnprobfn_dict, n_live=1000)
+        sampler.run(verbose=args.verbose)
+
+        points, log_w, log_like = sampler.posterior()
+
+    if fitter == "ultranest":
+        # --- ultranest ---
+        import ultranest
+        sampler = ultranest.ReactiveNestedSampler(params.free_params, lnprobfn, params.prior_transform)
+        result = sampler.run(**sampler_kwargs)
+
+        points = np.array(result['weighted_samples']['points'])
+        log_w = np.log(np.array(result['weighted_samples']['weights']))
+        log_like = np.array(result['weighted_samples']['logl'])
+
+    if fitter == "dynesty":
+        # --- Dynesty ---
+        import dynesty
+        sampler = dynesty.DynamicNestedSampler(lnprobfn, params.prior_transform,
+                                               len(params.free_params),
+                                               nlive=1000,
+                                               bound='multi', sample="unif",
+                                               walks=48)
+        sampler.run_nested(n_effective=1000, dlogz_init=0.05)
+
+        points = sampler.results["samples"]
+        log_w = sampler.results["logwt"]
+        log_like = sampler.results["logl"]
+
+    if fitter == "emcee":
+        raise(NotImplementedError)
+        assert (not args.evolving)
+        def lnposterior(qq, params=None, data=None, lf=None, veff=None):
+            # need to include the prior for emcee
+            lnp = params.prior_product(qq)
+            lnl = lnlike(qq, data=data, lf=lf, veff=veff)
+            return lnp + lnl
+        lnprobfn = partial(lnposterior, params=params, data=jof, lf=lf, veff=veff)
+        import emcee
+        nwalkers, ndim, niter = 32, len(qq_true), 512
+        initial = np.array([params.prior_transform(u)
+                            for u in np.random.uniform(0, 1, (nwalkers, ndim))])
+        sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobfn)
+        sampler.run_mcmc(initial, niter, progress=True)
+
+        points = sampler.flatchain
+        log_w = None
+        log_like = sampler.flatlnprobability
+
+    if fitter == "brute":
+        raise(NotImplementedError)
+        # -- Brute Force on a grid ---
+        assert (not args.evolving)
+        from itertools import product
+        phi_grid = 10**np.linspace(-5, -3, 30)
+        lstar_grid = 10**np.linspace(19/2.5, 22/2.5, 30)
+        alpha_grid = np.linspace(-2.5, -1.5, 30)
+        qqs = np.array(list(product(phi_grid, lstar_grid, alpha_grid)))
+        lnp = np.zeros(len(qqs))
+        for i, qq in enumerate(qqs):
+            lnp[i] = lnprobfn(qq)
+
+        points = qq
+        log_w = None
+        log_like = lnp
+
+    return points, log_w, log_like, sampler
+
+
 if __name__ == "__main__":
 
     parser = create_parser()
@@ -308,9 +393,9 @@ if __name__ == "__main__":
     mock.to_fits("mock_data.fits")
 
 
-    # ---------------
-    # --- Fitting ---
-    # ---------------
+    # ----------------
+    # --- lnprobfn ---
+    # ----------------
     assert np.isfinite(params.prior_product(qq_true))
     lnprobfn = partial(lnlike, data=mock, lf=lf, veff=veff, evolving=args.evolving)
 
@@ -326,99 +411,30 @@ if __name__ == "__main__":
             return lnprobfn(qq)
 
 
-    # -------------------
-    # --- Fitting -------
-    # -------------------
-    if args.fitter == "nautilus":
-        from nautilus import Prior, Sampler
 
-        prior = Prior()
-        for k in params.param_names:
-            prior.add_parameter(k, dist=(pdict[k].params['mini'], pdict[k].params['maxi']))
+    points, log_w, log_like, sampler = fit(params, lnprobfn, fitter=args.fitter)
 
-        sampler = Sampler(prior, lnprobfn_dict, n_live=1000)
-        sampler.run(verbose=False)
 
-        import corner
-        points, log_w, log_l = sampler.posterior()
-        ndim = points.shape[1]
-        fig, axes = pl.subplots(ndim, ndim, figsize=(5., 5.))
-        fig = corner.corner(points, weights=np.exp(log_w), bins=20, labels=prior.keys,
-                            plot_datapoints=False, plot_density=False,
-                            fill_contours=True, levels=(0.68, 0.95),
-                            range=np.ones(ndim) * 0.999, fig=fig,
-                            truths=qq_true, truth_color="red")
-        fig.savefig("posteriors-nautilus.png", dpi=300)
+    # ---------------
+    # --- Plotting ---
+    # ---------------
 
-    if args.fitter == "ultranest":
-        # --- ultranest ---
-        import ultranest
-        sampler = ultranest.ReactiveNestedSampler(params.free_params, lnprobfn, params.prior_transform)
-        result = sampler.run(**sampler_kwargs)
-        fig, axes = pl.subplots(ndim, ndim, figsize=(5., 5.))
-        fig = corner.corner(points, weights=np.exp(log_w), bins=20, labels=prior.keys,
-                            plot_datapoints=False, plot_density=False,
-                            fill_contours=True, levels=(0.68, 0.95),
-                            range=np.ones(ndim) * 0.999, fig=fig,
-                            truths=qq_true, truth_color="red")
-        fig.savefig("posteriors-ultranest.png", dpi=300)
+    import corner
+    mle = points[np.argmax(log_like)]
+    ndim = points.shape[1]
+    pmean = np.zeros(ndim)
+    for i in range(ndim):
+        pmean[i] = np.sum(np.exp(log_w)*points[:,i])/np.sum(np.exp(log_w))
+        print(f'Mean {pmean[i]}')
 
-    if args.fitter == "dynesty":
-        # --- Dynesty ---
-        import dynesty
-        dsampler = dynesty.DynamicNestedSampler(lnprobfn, params.prior_transform,
-                                                len(params.free_params),
-                                                nlive=1000,
-                                                bound='multi', sample="unif",
-                                                walks=48)
-        dsampler.run_nested(n_effective=1000, dlogz_init=0.05)
-        from dynesty import plotting as dyplot
-        fig, axes = dyplot.cornerplot(dsampler.results, labels=[r"$\phi_*$", r"L$_*$", r"$\alpha$"], truths=qq_true)
-        fig.savefig("posteriors-dynesty.png")
+    print(f'Shape of points {points.shape}')
+    fig, axes = pl.subplots(ndim, ndim, figsize=(6., 6.))
+    fig = corner.corner(points, weights=np.exp(log_w), bins=20, labels=params.free_params,
+                        plot_datapoints=False, plot_density=False,
+                        fill_contours=True, levels=(0.68, 0.95),
+                        range=np.ones(ndim) * 0.999, fig=fig,
+                        truths=pmean, truth_color="red")
 
-    if args.fitter == "emcee":
-        # --- emcee ---
-        assert (not args.evolving)
-        def lnposterior(qq, params=None, data=None, lf=None, veff=None):
-            # need to include the prior for emcee
-            lnp = params.prior_product(qq)
-            lnl = lnlike(qq, data=data, lf=lf, veff=veff)
-            return lnp + lnl
-        lnprobfn = partial(lnposterior, params=params, data=mock, lf=lf, veff=veff)
-        import emcee
-
-        nwalkers, ndim, niter = 32, len(qq_true), 512
-        initial = np.array([params.prior_transform(u)
-                            for u in np.random.uniform(0, 1, (nwalkers, ndim))])
-
-        sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobfn)
-        sampler.run_mcmc(initial, niter, progress=True)
-
-    if args.fitter == "brute":
-        # -- Brute Force on a grid ---
-        assert (not args.evolving)
-        from itertools import product
-        phi_grid = 10**np.linspace(-5, -3, 30)
-        lstar_grid = 10**np.linspace(19/2.5, 22/2.5, 30)
-        alpha_grid = np.linspace(-2.5, -1.5, 30)
-        qqs = np.array(list(product(phi_grid, lstar_grid, alpha_grid)))
-        lnp = np.zeros(len(qqs))
-        for i, qq in enumerate(qqs):
-            lnp[i] = lnprobfn(qq)
-
-        p = np.exp(lnp - lnp.max())
-        p[~np.isfinite(p)] = 0
-        fig, ax = pl.subplots()
-        ax.clear()
-        ax.hexbin(np.log10(qqs[:, 0]), -2.5 * np.log10(qqs[:, 1]), C=p, gridsize=25)
-        ax.set_xlabel(r"$\phi_{*}$")
-        #ax.set_xscale("log")
-        ax.set_ylabel(r"M$_{*,\rm UV}$")
-        ax.plot(np.log10(qq_true[0]), -2.5 * np.log10(qq_true[1]), "ro")
-        fig, ax = pl.subplots()
-        ax.clear()
-        ax.hexbin(qqs[:, 2], -2.5 * np.log10(qqs[:, 1]), C=p, gridsize=25)
-        ax.set_xlabel(r"$\alpha$")
-        #ax.set_xscale("log")
-        ax.set_ylabel(r"M$_{*,\rm UV}$")
-        ax.plot(qq_true[2], -2.5 * np.log10(qq_true[1]), "ro")
+    fig.suptitle(args.jof_datafile)
+    fig.savefig(f"posteriors-{args.fitter}.png", dpi=300)
+    print(f"MAP={points[np.argmax(log_like)]}")

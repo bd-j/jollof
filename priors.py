@@ -299,6 +299,7 @@ class Uniform(Prior):
     :param maxi:
         Maximum of the distribution
     """
+    name = "Uniform"
     prior_params = ['mini', 'maxi']
     distribution = scipy.stats.uniform
 
@@ -340,6 +341,7 @@ class Normal(Prior):
     :param sigma:
         Standard deviation of the distribution
     """
+    name = "Normal"
     prior_params = ['mean', 'sigma']
     distribution = scipy.stats.norm
 
@@ -378,6 +380,7 @@ class ClippedNormal(Prior):
     :param maxi:
         Maximum of the distribution
     """
+    name = "ClippedNormal"
     prior_params = ['mean', 'sigma', 'mini', 'maxi']
     distribution = scipy.stats.truncnorm
 
@@ -415,6 +418,7 @@ class LogUniform(Prior):
     :param maxi:
         Maximum of the distribution
     """
+    name = "LogUniform"
     prior_params = ['mini', 'maxi']
     distribution = scipy.stats.reciprocal
 
@@ -447,6 +451,7 @@ class Beta(Prior):
 
     :param beta:
     """
+    name = "Beta"
     prior_params = ['mini', 'maxi', 'alpha', 'beta']
     distribution = scipy.stats.beta
 
@@ -489,6 +494,7 @@ class LogNormal(Prior):
         Standard deviation of the distribution of the natural log of the
         variable.
     """
+    name = "LogNormal"
     prior_params = ['mode', 'sigma']
     distribution = scipy.stats.lognorm
 
@@ -514,84 +520,6 @@ class LogNormal(Prior):
         return (0, np.inf)
 
 
-class LogNormalLinpar(Prior):
-    """A log-normal prior, where the natural log of the variable is distributed
-    normally.  Useful for parameters that cannot be less than zero.
-
-    LogNormal(mode=x, sigma=y) is equivalent to
-    LogNormalLinpar(mode=np.exp(x), sigma_factor=np.exp(y))
-
-    :param mode:
-        The (linear) value of the variable where the probability density is
-        highest. Must be > 0.
-
-    :param sigma_factor:
-        The (linear) factor describing the dispersion of the log of the
-        variable.  Must be > 0
-    """
-    prior_params = ['mode', 'sigma_factor']
-    distribution = scipy.stats.lognorm
-
-    @property
-    def args(self):
-        return [np.log(self.params["sigma_factor"])]
-
-    @property
-    def scale(self):
-        k = self.params["sigma_factor"]**np.log(self.params["sigma_factor"])
-        return  self.params["mode"] * k
-
-    @property
-    def loc(self):
-        return 0
-
-    @property
-    def range(self):
-        nsig = 4
-        return (self.params['mode'] * (nsig * self.params['sigma_factor']),
-                self.params['mode'] /  (nsig * self.params['sigma_factor']))
-
-    def bounds(self, **kwargs):
-        return (0, np.inf)
-
-class SkewNormal(Prior):
-    """A normal distribution including a skew parameter
-
-    :param location:
-        Center (*not* mean, mode, or median) of the distribution.
-        The center will approach the mean as skew approaches zero.
-
-    :param sigma:
-        Standard deviation of the distribution
-
-    :param skew:
-        Skewness of the distribution
-    """
-    prior_params = ['location', 'sigma', 'skew']
-    distribution = scipy.stats.skewnorm
-
-    @property
-    def args(self):
-        return [self.params['skew']]
-
-    @property
-    def scale(self):
-        return self.params['sigma']
-
-    @property
-    def loc(self):
-        return self.params['location']
-
-    @property
-    def range(self):
-        nsig = 4
-        return (self.params['location'] - nsig * self.params['sigma'],
-                self.params['location'] + nsig * self.params['sigma'])
-
-    def bounds(self, **kwargs):
-        return (-np.inf, np.inf)
-
-
 class StudentT(Prior):
     """A Student's T distribution
 
@@ -604,6 +532,7 @@ class StudentT(Prior):
     :param df:
         Number of degrees of freedom
     """
+    name = "StudentT"
     prior_params = ['mean', 'scale', 'df']
     distribution = scipy.stats.t
 
@@ -625,253 +554,3 @@ class StudentT(Prior):
 
     def bounds(self, **kwargs):
         return (-np.inf, np.inf)
-
-# fast versions to the above priors
-# essentially rewriting the numpy/scipy functions
-
-# A faster uniform distribution. Give it a lower bound `a` and
-# an upper bound `b`.
-class FastUniform(Prior):
-
-    prior_params = ['a', 'b']
-
-    def __init__(self, a=0.0, b=1.0, parnames=[], name='', ):
-        if len(parnames) == 0:
-            parnames = self.prior_params
-        assert len(parnames) == len(self.prior_params)
-
-        self.alias = dict(zip(self.prior_params, parnames))
-        self.params = {}
-
-        self.name = name
-
-        self.a, self.b = a, b
-
-        if self.b <= self.a:
-            raise ValueError('b must be greater than a')
-
-        self.diffthing = b - a
-        self.pdfval = 1.0 / (b - a)
-        self.logpdfval = np.log(self.pdfval)
-
-    def __len__(self):
-        return 1
-
-    def __call__(self, x):
-        if not hasattr(x, "__len__"):
-            if self.a <= x <= self.b:
-                return self.logpdfval
-            else:
-                return np.NINF
-        else:
-            return [self.logpdfval if (self.a <= xi <= self.b) else np.NINF for xi in x]
-
-    def scale(self):
-        return 0.5 * self.diffthing
-
-    def loc(self):
-        return 0.5 * (self.a + self.b)
-
-    def unit_transform(self, x):
-        return (x * self.diffthing) + self.a
-
-    def sample(self):
-        return self.unit_transform(np.random.rand())
-
-
-# A faster truncated normal distribution. Give it a lower bound `a`,
-# a upper bound `b`, a mean `mu`, and a standard deviation `sig`.
-class FastTruncatedNormal(Prior):
-
-    prior_params = ['a', 'b', 'mu', 'sig']
-
-    def __init__(self, a=-1.0, b=1.0, mu=0.0, sig=1.0, parnames=[], name='', ):
-        if len(parnames) == 0:
-            parnames = self.prior_params
-        assert len(parnames) == len(self.prior_params)
-
-        self.alias = dict(zip(self.prior_params, parnames))
-        self.params = {}
-
-        self.name = name
-
-        self.a, self.b, self.mu, self.sig = a, b, mu, sig
-
-        if self.b <= self.a:
-            raise ValueError('b must be greater than a')
-
-        self.alpha = (self.a - self.mu) / self.sig
-        self.beta = (self.b - self.mu) / self.sig
-
-        self.A = erf(self.alpha / np.sqrt(2.0))
-        self.B = erf(self.beta / np.sqrt(2.0))
-
-    def xi(self, x):
-        return (x - self.mu) / self.sig
-
-    def phi(self, x):
-        return np.sqrt(2.0 / (self.sig**2.0 * np.pi)) * np.exp(-0.5 * self.xi(x)**2.0)
-
-    def __len__(self):
-        return 1
-
-    def __call__(self, x):
-        # if self.a <= x <= self.b:
-        #     return np.log(self.phi(x) / (self.B - self.A))
-        # else:
-        #     return np.NINF
-        if not hasattr(x, "__len__"):
-            if self.a <= x <= self.b:
-                return np.log(self.phi(x) / (self.B - self.A))
-            else:
-                np.NINF
-        else:
-            return [np.log(self.phi(xi) / (self.B - self.A)) if (self.a <= xi <= self.b) else np.NINF for xi in x]
-
-    def scale(self):
-        return self.sig
-
-    def loc(self):
-        return self.mu
-
-    def unit_transform(self, x):
-        return self.sig * np.sqrt(2.0) * erfinv((self.B - self.A) * x + self.A) + self.mu
-
-    def sample(self):
-        return self.unit_transform(np.random.rand())
-
-
-# Okay. This is a sort of Student's t-distribution that allows
-# for truncation and rescaling, but it requires nu = 2 and mu = 0
-# and for the truncation limits to be equidistant from mu. Give it
-# the half-width of truncation (i.e. if you want it truncated to the
-# domain (-5, 5), give it `hw = 5`) and the rescaled standard
-# devation `sig`.
-class FastTruncatedEvenStudentTFreeDeg2(Prior):
-
-    prior_params = ['hw', 'sig']
-
-    def __init__(self, hw=0.0, sig=1.0, parnames=[], name='', ):
-        if len(parnames) == 0:
-            parnames = self.prior_params
-        assert len(parnames) == len(self.prior_params)
-
-        self.alias = dict(zip(self.prior_params, parnames))
-        self.params = {}
-
-        self.name = name
-
-        self.hw, self.sig = hw, sig
-
-        if np.any(self.hw <= 0.0):
-            raise ValueError('hw must be greater than 0.0')
-
-        if np.any(self.sig <= 0.0):
-            raise ValueError('sig must be greater than 0.0')
-
-        self.const1 = np.sqrt(1.0 + 0.5*(self.hw**2.0))
-        self.const2 = 2.0 * self.sig * self.hw
-        self.const3 = self.const2**2.0
-        self.const4 = 2.0 * (self.hw**2.0)
-
-    def __len__(self):
-        return len(self.hw)
-
-    def __call__(self, x):
-        if not hasattr(x, "__len__"):
-            if np.abs(x) <= self.hw:
-                return np.log(self.const1 / (self.const2 * (1 + 0.5*(x / self.sig)**2.0)**1.5))
-            else:
-                return np.NINF
-        else:
-            ret = np.log(self.const1 / (self.const2 * (1 + 0.5*(x / self.sig)**2.0)**1.5))
-            bad = np.abs(x) > self.hw
-            ret[bad] = np.NINF
-            return ret
-
-    def scale(self):
-        return self.sig
-
-    def loc(self):
-        return 0.0
-
-    def invcdf_numerator(self, x):
-        return -1.0 * (self.const3 * x**2.0 - self.const3 * x + (self.sig * self.hw)**2.0)
-
-    def invcdf_denominator(self, x):
-        return self.const4 * x**2.0 - self.const4 * x - self.sig**2.0
-
-    def unit_transform(self, x):
-        f = (((x > 0.5) & (x <= 1.0)) * np.sqrt(self.invcdf_numerator(x) / self.invcdf_denominator(x)) -
-             ((x >= 0.0) & (x <= 0.5)) * np.sqrt(self.invcdf_numerator(x) / self.invcdf_denominator(x)))
-        return f
-
-    def sample(self):
-        return self.unit_transform(np.random.rand())
-
-
-# Okay. This is a sort of Student's t-distribution that allows
-# for truncation and rescaling, but it requires nu = 2 and mu = 0
-# and for the truncation limits to be equidistant from mu. Give it
-# the half-width of truncation (i.e. if you want it truncated to the
-# domain (-5, 5), give it `hw = 5`) and the rescaled standard
-# devation `sig`.
-class FastTruncatedEvenStudentTFreeDeg2Scalar(Prior):
-
-    prior_params = ['hw', 'sig']
-
-    def __init__(self, hw=0.0, sig=1.0, parnames=[], name='', ):
-        if len(parnames) == 0:
-            parnames = self.prior_params
-        assert len(parnames) == len(self.prior_params)
-
-        self.alias = dict(zip(self.prior_params, parnames))
-        self.params = {}
-
-        self.name = name
-
-        self.hw, self.sig = hw, sig
-
-        if self.hw <= 0.0:
-            raise ValueError('hw must be greater than 0.0')
-
-        if self.sig <= 0.0:
-            raise ValueError('sig must be greater than 0.0')
-
-        self.const1 = np.sqrt(1.0 + 0.5*(self.hw**2.0))
-        self.const2 = 2.0 * self.sig * self.hw
-        self.const3 = self.const2**2.0
-        self.const4 = 2.0 * (self.hw**2.0)
-
-    def __len__(self):
-        return 1
-
-    def __call__(self, x):
-        if not hasattr(x, "__len__"):
-            if np.abs(x) <= self.hw:
-                return np.log(self.const1 / (self.const2 * (1 + 0.5*(x / self.sig)**2.0)**1.5))
-            else:
-                return np.NINF
-        else:
-            return [np.log(self.const1 / (self.const2 * (1 + 0.5*(xi / self.sig)**2.0)**1.5)) if np.abs(xi) <= self.hw else np.NINF for xi in x]
-
-    def scale(self):
-        return self.sig
-
-    def loc(self):
-        return 0.0
-
-    def invcdf_numerator(self, x):
-        return -1.0 * (self.const3 * x**2.0 - self.const3 * x + (self.sig * self.hw)**2.0)
-
-    def invcdf_denominator(self, x):
-        return self.const4 * x**2.0 - self.const4 * x - self.sig**2.0
-
-    def unit_transform(self, x):
-        if 0.0 <= x <= 0.5:
-            return -1.0 * np.sqrt(self.invcdf_numerator(x) / self.invcdf_denominator(x))
-        elif 0.5 < x <= 1.0:
-            return np.sqrt(self.invcdf_numerator(x) / self.invcdf_denominator(x))
-
-    def sample(self):
-        return self.unit_transform(np.random.rand())
