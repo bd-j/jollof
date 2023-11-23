@@ -183,7 +183,7 @@ class EvolvingSchechter:
             factor = np.log(10)
         else:
             factor = 1
-        return factor * self.phi * x.flatten()**(self.alpha + int(in_dlogl)) * np.exp(-x)
+        return factor * self.phi * x**(self.alpha + int(in_dlogl)) * np.exp(-x)
 
     def n_effective(self, veff):
         """Compute the expected number of objects given a selection function on
@@ -234,7 +234,7 @@ class EvolvingSchechter:
 
         return fconv*rho_integrated #erg/s/Hz/Mpc^3
 
-    def nl(self, z=None, q=None, lmin=7.2, lmax=20.0, nlx=100):
+    def nl(self, z=None, q=None, lmin=7.0, lmax=20.0, nlx=100):
         """Compute the integrated number density
         between lmin and lmax as a function
         of redshift
