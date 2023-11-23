@@ -152,7 +152,7 @@ class EvolvingSchechter:
         if z is None:
             z = self.zref
 
-        self.alpha = self._alphas
+        self.alpha = self._alphas[0]
 
         # --- phi = phi_0 \, (1+z)^\beta ----
         zz = np.log10((1 + z) / (1 + self.zref))
@@ -183,7 +183,7 @@ class EvolvingSchechter:
             factor = np.log(10)
         else:
             factor = 1
-        return factor * self.phi * x**(self.alpha + int(in_dlogl)) * np.exp(-x)
+        return factor * self.phi * x.flatten()**(self.alpha + int(in_dlogl)) * np.exp(-x)
 
     def n_effective(self, veff):
         """Compute the expected number of objects given a selection function on
@@ -211,7 +211,7 @@ class EvolvingSchechter:
 
         return dN, dV
 
-    def rhol(self, z=None, q=None, lmin=6.8, lmax=20.0):
+    def rhol(self, z=None, q=None, lmin=6.8, lmax=20.0, nlx=100):
         """Compute the integrated luminosity density
         between lmin and lmax as a function of redshift
 
@@ -219,69 +219,70 @@ class EvolvingSchechter:
         -------
         L/Mpc^3
         """
+        #set parameters if needed
         if q is not None:
             self.set_parameters(q)
-        self.set_redshift(z)
-        xmin = 10**(lmin) / self.lstar
-        xmax = 10**(lmax) / self.lstar
-        n = self.alpha + 2
-        g0 = gammainc(n, xmin)  #\Gamma(alpha+2,L/Lstar)
-        g1 = gammainc(n, xmax)  #\Gamma(alpha+2,L/Lstar)
 
-        # maggie = f_Jy / 3631
-        # f_Jy = maggies * 3631.0
-        # f_cgs = f_Jy * 1e-23 erg/s/cm^2/Hz
-        # A_10pc = 4*np.pi*(10*3.08567758128e18)**2 cm^2 = 1.1964951826995877e+40 cm^2
-        # L_cgs = f_cgs * A_10pc
-        # L_cgs = maggies * 3631 * 1.0e-23 * 1.1964951826995877e+40
-        # log10 lm =  -MUV/2.5
-        # MUV = -2.5* log10 lm
-        # MUV = 31.4 - 2.5*log10 flux_nJy)
-        # flux_nJy = 10**(-0.4*(MUV-31.4)) = 10**(31.4/2.5) * maggie
-        # nJy = 1e-32 erg /s/ cm^2 /Hz
-        # L_cgs = maggie * 10**(31.4/2.5) * 1e-32 * 1.1964951826995877e+40
-        # L_cgs = maggie * 4.344211434763621e20
+        #array of luminosity and phi
+        l_array   = np.linspace(lmin,lmax,nlx)
+        rho_array = (10**l_array)*np.array(self.evaluate(10**l_array, z, grid=False, in_dlogl=True))
+
+        #return rho
+        rho_integrated = np.trapz(rho_array,x=l_array)
+
         fconv = 4.344211434763621e20 #maggie to erg/s/Hz
-        return fconv*self.phi*self.lstar*gamma(n)*(g1-g0)
 
-    def nl(self, z=None, q=None, lmin=7.2, lmax=20.0):
+        return fconv*rho_integrated #erg/s/Hz/Mpc^3
+
+    def nl(self, z=None, q=None, lmin=7.2, lmax=20.0, nlx=100):
         """Compute the integrated number density
         between lmin and lmax as a function
         of redshift
 
         Returns
         -------
-        L/Mpc^3
+        n/Mpc^3
         """
-        from sympy.functions.special.gamma_functions import uppergamma
+
+        #set parameters if needed
         if q is not None:
             self.set_parameters(q)
-        #print(f'phistar {self.phi}')
-        #print(f'lstar {self.lstar}')
-        #print(f'alpha {self.alpha}')
 
+
+        #array of luminosity and phi
+        l_array   = np.linspace(lmin,lmax,nlx)
+        phi_array = np.array(self.evaluate(10**l_array, z, grid=False, in_dlogl=True))
+
+        #return n
+        n_integrated = np.trapz(phi_array,x=l_array)
+
+        return n_integrated #1/Mpc^3
+
+
+    def nM(self, z=None, q=None, Mmin=-22.3, Mmax=-18.0, nMx=100):
+        """Compute the integrated number density
+        between Mmin and Mmax as a function
+        of redshift
+
+        Returns
+        -------
+        n/Mpc^3
+        """
+
+        #set parameters
+        if q is not None:
+            self.set_parameters(q)
+
+        #set redshift in evolving lF
         self.set_redshift(z)
-        xmin = 10**(lmin)/self.lstar
-        xmax = 10**(lmax)/self.lstar
-        #print(f'lstar {self.lstar}')
-        #print(f'xmin {xmin}')
-        #print(f'xmax {xmax}')
-        n = self.alpha + 1
-        #g0 = gammainc(n,xmin)  #\Gamma(alpha+1,L/Lstar)
-        #print(n,xmin,xmax)
-        #g0 = uppergamma(n,xmin)
-        g0 = [uppergamma(n[i],xmin[i]) for i in range(len(n))]
-        g0 = np.asarray(g0)
 
-        #print(f'g0 {g0}')
-        #g1 = gammainc(n,xmax)  #\Gamma(alpha+1,L/Lstar)
-        #g1 = uppergamma(n,xmax)
-        g1 = [uppergamma(n[i],xmax[i]) for i in range(len(n))]
-        g1 = np.asarray(g1)
-        #print(f'g1 {g1}')
-        #print(f'n {n} gamma({gamma(n)}) {gamma(n)}')
-        #return self.phi*gamma(n)*(g1-g0)
-        return self.phi*gammasgn(n)*(g1-g0)
+        #set min and max luminosities
+        #based on min and max magnitues
+        lmin = Mmax/-2.5
+        lmax = Mmin/-2.5
+
+        #return nl
+        return self.nl(z=z,q=q,lmin=lmin,lmax=lmax,nlx=nMx)
 
     def record_parameter_evolution(self, zgrid):
         """record the LF parameter evolution to an ascii table
