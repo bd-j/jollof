@@ -545,7 +545,7 @@ def construct_effective_volume(loglgrid, zgrid, omega,
                      completeness_kwargs={},
                      selection_kwargs={},fake_flag=False,comp_sel=None,comp_det=None,
                      muv_min=27,muv_max=32,
-                     f_cover = 0.7785,
+                     f_cover = 1,
                      as_interpolator=True):
     """compute this on a grid of z and Muv
 
@@ -555,6 +555,9 @@ def construct_effective_volume(loglgrid, zgrid, omega,
        Effective volume in each luminosity and redshift bin.  This is the
        differential volume in Mpc^3/redshift, multiplied by the probability of
        an object at that luminsity and redshift being in the catalog.
+
+        note for 3215, f_cover = 0.7785,
+
     """
     # Compute dV/dz (Mpc^3/redshift)
     volume = omega * cosmo.differential_comoving_volume(zgrid).value
