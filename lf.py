@@ -538,7 +538,9 @@ def plot_veff(loglgrid,zgrid,veff):
 
 #    im = ax.imshow(comp.T,origin='lower',extent= \
     x,y = np.meshgrid(zgrid,loglgrid)
-    im = ax.imshow(veff((y,x)),origin='lower',extent= \
+    veffi = veff((y,x))
+    print(f'Maximum veff {np.max(veffi)}')
+    im = ax.imshow(veffi,origin='lower',extent= \
         [x_min,x_max,y_min,y_max])
     ax.set_xlabel(r'Redshift $z$')
     ax.set_ylabel('Log L')

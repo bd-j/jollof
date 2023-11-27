@@ -41,6 +41,8 @@ if __name__ == "__main__":
                         default='samples.fits')
     parser.add_argument("--replicate", type=int,
                         default=0)
+    parser.add_argument("--f_cover", type=float,
+                        default=1)
     #create parser
     args = parser.parse_args()
 
@@ -51,7 +53,7 @@ if __name__ == "__main__":
         print(f'Maximum redshift {args.zmax}')
         print(f'Minimum Muv {args.loglmin*-2.5}')
         print(f'Maximum Muv {args.loglmax*-2.5}')
-        print(f'Replicate input objects? {args.replicate}')
+        print(f'Fraction of uncovered pixels {args.f_cover}')
 
     #compute area
     args.omega = (args.area * arcmin**2).to("steradian").value
@@ -110,7 +112,8 @@ if __name__ == "__main__":
     veff = construct_effective_volume(loglgrid, zgrid, omega=args.omega,\
                                       as_interpolator=True, fake_flag=False,\
                                       muv_min=mab_det_grid.min(),muv_max=mab_det_grid.max(),\
-                                      comp_det=comp_det, comp_sel=comp_sel)
+                                      comp_det=comp_det, comp_sel=comp_sel, f_cover=args.f_cover)
+
     #save a figure
     plot_veff(loglgrid,zgrid,veff)
 
