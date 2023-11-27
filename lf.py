@@ -593,9 +593,6 @@ def construct_effective_volume(loglgrid, zgrid, omega,
             cd = comp_det((mab_clip_grid,-1.5)) #pretend all sizes are logrh<=-1.5
             veff = cd*veff # apply completeness
 
-            #apply covering factor
-            veff *= f_cover
-
         #apply selection completeness
         if(comp_sel is not None):
 
@@ -615,8 +612,8 @@ def construct_effective_volume(loglgrid, zgrid, omega,
             veff = cs*veff # apply completeness
 
 
-            #apply covering factor
-            veff *= f_cover
+    #apply covering factor
+    veff *= f_cover
 
 
 
