@@ -282,7 +282,7 @@ def fit(params, lnprobfn, verbose=False,
                 prior.add_parameter(k, dist=norm(pr.params['mean'], pr.params['sigma']))
             else:
                 prior.add_parameter(k, dist=(pr.params['mini'], pr.params['maxi']))
-        sampler = Sampler(prior, lnprobfn_dict, n_live=1000)
+        sampler = Sampler(prior, lnprobfn, n_live=1000)
         sampler.run(verbose=verbose)
 
         points, log_w, log_like = sampler.posterior()
