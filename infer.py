@@ -54,8 +54,17 @@ class DataSamples:
             all_samples = new_samples
             print(f'all_samples.shape {all_samples.shape} all_samples.keys() {all_samples[0].dtype}')
 
-
         return all_samples
+
+    def to_eazy(self):
+        convert = dict(z_samples=("zred_samples", lambda x: x),
+                       MUV_samples=("logl_samples", lambda x: -2.5 * x))
+        n_samples = self.n_samples
+        dtype = np.dtype([("MUV_samples", float, (n_samples,)),
+                          ("z_samples", float, (n_samples,))])
+        arr = np.zeros(len(self.all_samples), dtype=dtype)
+        for n, (o, konvert) in convert.items():
+            arr[:][n] = konvert(self.all_samples[o][:, :self.n_samples])
 
     def add_objects(self, objects):
         dtype = self.get_dtype(self.n_samples)
@@ -91,7 +100,8 @@ class DataSamples:
         return fig, ax
 
     def to_fits(self, fitsfilename):
-        samples = fits.BinTableHDU(self.all_samples, name="SAMPLES")
+        arr = self.to_eazy()
+        samples = fits.BinTableHDU(arr, name="SAMPLES")
         samples.header["NSAMPL"] = self.n_samples
         hdul = fits.HDUList([fits.PrimaryHDU(),
                              samples])
@@ -266,8 +276,8 @@ def fit(params, lnprobfn, verbose=False,
         # we have to use the nautilus prior objects
         prior = Prior()
         for k in params.param_names:
-            pr = pdict[k]
-            if pr.name == "Normal":
+            pr = params.priors[k]
+            if pr.kind == "Normal":
                 prior.add_parameter(k, dist=norm(pr.params['mean'], pr.params['sigma']))
             else:
                 prior.add_parameter(k, dist=(pr.params['mini'], pr.params['maxi']))

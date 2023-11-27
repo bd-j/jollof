@@ -299,9 +299,12 @@ class Uniform(Prior):
     :param maxi:
         Maximum of the distribution
     """
-    name = "Uniform"
     prior_params = ['mini', 'maxi']
     distribution = scipy.stats.uniform
+
+    @property
+    def kind(self):
+        return "Uniform"
 
     @property
     def scale(self):
@@ -341,9 +344,12 @@ class Normal(Prior):
     :param sigma:
         Standard deviation of the distribution
     """
-    name = "Normal"
     prior_params = ['mean', 'sigma']
     distribution = scipy.stats.norm
+
+    @property
+    def kind(self):
+        return "Normal"
 
     @property
     def scale(self):
@@ -380,9 +386,11 @@ class ClippedNormal(Prior):
     :param maxi:
         Maximum of the distribution
     """
-    name = "ClippedNormal"
     prior_params = ['mean', 'sigma', 'mini', 'maxi']
     distribution = scipy.stats.truncnorm
+
+    def kind(self):
+        return "ClippedNormal"
 
     @property
     def scale(self):
