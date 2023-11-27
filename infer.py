@@ -13,7 +13,7 @@ from lf import EvolvingSchechter, sample_twod
 from lf import construct_effective_volume
 from lf import lum_to_mag, mag_to_lum, arcmin
 
-from priors import Parameters, Uniform
+from priors import Parameters, Uniform, Normal
 
 
 maggies_to_nJy = 3631e9
@@ -39,14 +39,10 @@ class DataSamples:
         convert = dict(zred_samples=("z_samples", lambda x: x),
                        logl_samples=("MUV_samples", lambda x: -0.4 * x))
 
-        #table.rename_columns(old, new)
-        #table["logl_samples"] = -0.4 * table["logl_samples"]
-        #return table.as_array().filled()
         dtype = self.get_dtype(self.n_samples)
         all_samples = np.zeros(len(table), dtype=dtype)
         for n, (o, konvert) in convert.items():
             all_samples[:][n] = konvert(table[o][:, :self.n_samples])
-
 
         #Add duplicate objects (for testing purposes)
         if(replicate>0):
@@ -108,15 +104,19 @@ def make_mock(loglgrid, zgrid, omega,
               sigma_logz=0.1, sigma_flux=1/maggies_to_nJy,
               completeness_kwargs={},
               selection_kwargs={},
+              fake_flag=True,
               seed=None):
+    """Draw a set of mock galaxies from a LF x Veff, add noise to them and draew
+    samples from that noise
+    """
 
-    np.random.seed(seed)
+    #np.random.seed(seed)
 
     lf.set_parameters(q_true)
     veff = construct_effective_volume(loglgrid, zgrid, omega,
                                       completeness_kwargs=completeness_kwargs,
                                       selection_kwargs=selection_kwargs,
-                                      fake_flag=False,
+                                      fake_flag=fake_flag,
                                       as_interpolator=True)
 
     dN, dV = lf.n_effective(veff)
@@ -128,10 +128,13 @@ def make_mock(loglgrid, zgrid, omega,
     data = []
     for logl, zred in zip(logl_true, zred_true):
         l_s, z_s = sample_mock_noise(logl, zred,
-                                     sigma_logz=sigma_logz, sigma_flux=sigma_flux,
+                                     sigma_logz=sigma_logz,
+                                     sigma_flux=sigma_flux,
                                      n_samples=n_samples)
-        obj = dict(logl_true=logl, zred_true=zred,
-                   logl_samples=l_s, zred_samples=z_s)
+        obj = dict(logl_true=logl,
+                   zred_true=zred,
+                   logl_samples=l_s,
+                   zred_samples=z_s)
         data.append(obj)
     alldata = DataSamples(data, n_samples=n_samples)
     alldata.seed = seed
@@ -289,7 +292,8 @@ def fit(params, lnprobfn, verbose=False,
         sampler = dynesty.DynamicNestedSampler(lnprobfn, params.prior_transform,
                                                len(params.free_params),
                                                nlive=1000,
-                                               bound='multi', sample="unif",
+                                               bound='multi',
+                                               sample="unif",
                                                walks=48)
         sampler.run_nested(n_effective=1000, dlogz_init=0.05)
 
@@ -363,7 +367,7 @@ if __name__ == "__main__":
                  phi1=Uniform(mini=-3, maxi=3),
                  lstar0=Uniform(mini=(19 / 2.5), maxi=(22 / 2.5)),
                  lstar1=Uniform(mini=-3, maxi=3),
-                 alpha=Uniform(mini=-2.5, maxi=-1.5))
+                 alpha=Normal(mean=-2, sigma=0.05))
     if args.evolving:
         param_names = ["phi0", "phi1", "lstar0", "lstar1", "alpha"]
     else:
@@ -385,8 +389,9 @@ if __name__ == "__main__":
     mock, veff = make_mock(loglgrid, zgrid, args.omega,
                            q_true, lf=lf,
                            sigma_logz=0.05,
+                           sigma_flux=0.1/maggies_to_nJy,
                            n_samples=args.n_samples,
-                           seed=42)
+                           fake_flag=args.fake_flag)
     print(f"{len(mock.all_samples)} objects drawn from this LF x Veff")
     dN, _ = lf.n_effective(veff)
 
@@ -397,7 +402,9 @@ if __name__ == "__main__":
     _, ax = mock.show(ax=ax)
     fig.savefig("mock_samples.png", dpi=300)
     mock.to_fits("mock_data.fits")
+    veff.to_fits("mock_veff.fits")
 
+    #sys.exit()
 
     # ----------------
     # --- lnprobfn ---

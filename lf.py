@@ -436,6 +436,16 @@ class EffectiveVolumeGrid:
     def data(self):
         return self.values
 
+    def to_fits(self, fitsfilename):
+        v = fits.ImageHDU(self.values, name="VEFF")
+        v.header["UNITS"] = "differential effective volume in Mpc**3/redshift"
+        l = fits.ImageHDU(self.loglgrid, name="LOGL")
+        l.header["UNITS"] = "log_10(absolute maggies)"
+        z = fits.ImageHDU(self.zgrid, name="Z")
+        hdul = fits.HDUList([fits.PrimaryHDU(),
+                             v, l, z])
+        hdul.writeto(fitsfilename, overwrite=True)
+
 
 class CompletenessGrid:
     """Thin wrapper on RegularGridInterpolator that keeps track of the grid points and grid values
