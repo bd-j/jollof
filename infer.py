@@ -107,12 +107,16 @@ def make_mock(loglgrid, zgrid, omega,
               n_samples=100,
               sigma_logz=0.1, sigma_flux=1/maggies_to_nJy,
               completeness_kwargs={},
-              selection_kwargs={}):
+              selection_kwargs={},
+              seed=None):
+
+    np.random.seed(seed)
 
     lf.set_parameters(q_true)
     veff = construct_effective_volume(loglgrid, zgrid, omega,
                                       completeness_kwargs=completeness_kwargs,
                                       selection_kwargs=selection_kwargs,
+                                      fake_flag=True,
                                       as_interpolator=True)
 
     dN, dV = lf.n_effective(veff)
@@ -130,6 +134,7 @@ def make_mock(loglgrid, zgrid, omega,
                    logl_samples=l_s, zred_samples=z_s)
         data.append(obj)
     alldata = DataSamples(data, n_samples=n_samples)
+    alldata.seed = seed
 
     return alldata, veff
 
@@ -264,7 +269,7 @@ def fit(params, lnprobfn, verbose=False,
             else:
                 prior.add_parameter(k, dist=(pr.params['mini'], pr.params['maxi']))
         sampler = Sampler(prior, lnprobfn_dict, n_live=1000)
-        sampler.run(versbose=verbose)
+        sampler.run(verbose=verbose)
 
         points, log_w, log_like = sampler.posterior()
 
@@ -368,7 +373,7 @@ if __name__ == "__main__":
     # -------------------
     # --- Truth ---
     # -------------------
-    q_true = np.array([-4, 0, (21 / 2.5), 0, -1.7])
+    q_true = np.array([-4, 0, (21 / 2.5), 0, -2.0])
     if args.evolving:
         qq_true = q_true
     else:
@@ -377,11 +382,11 @@ if __name__ == "__main__":
     # -----------------------
     # --- build mock data ---
     # -----------------------
-
     mock, veff = make_mock(loglgrid, zgrid, args.omega,
                            q_true, lf=lf,
                            sigma_logz=0.05,
-                           n_samples=args.n_samples)
+                           n_samples=args.n_samples,
+                           seed=42)
     print(f"{len(mock.all_samples)} objects drawn from this LF x Veff")
     dN, _ = lf.n_effective(veff)
 
@@ -435,8 +440,8 @@ if __name__ == "__main__":
                         plot_datapoints=False, plot_density=False,
                         fill_contours=True, levels=(0.68, 0.95),
                         range=np.ones(ndim) * 0.999, fig=fig,
-                        truths=pmean, truth_color="red")
+                        truths=qq_true, truth_color="red")
 
-    fig.suptitle(args.jof_datafile)
+    fig.suptitle(f"Mock: {qq_true}")
     fig.savefig(f"posteriors-{args.fitter}.png", dpi=300)
     print(f"MAP={points[np.argmax(log_like)]}")
