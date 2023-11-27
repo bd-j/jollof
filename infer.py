@@ -65,6 +65,7 @@ class DataSamples:
         arr = np.zeros(len(self.all_samples), dtype=dtype)
         for n, (o, konvert) in convert.items():
             arr[:][n] = konvert(self.all_samples[o][:, :self.n_samples])
+        return arr
 
     def add_objects(self, objects):
         dtype = self.get_dtype(self.n_samples)
@@ -359,6 +360,8 @@ if __name__ == "__main__":
                                  "ultranest", "nautilus"])
     parser.add_argument("--n_samples", type=int, default=1)
     parser.add_argument("--evolving", type=int, default=0)
+    parser.add_argument("--sample_output", type=str, default='samples.fits')
+
     args = parser.parse_args()
     args.omega = (args.area * arcmin**2).to("steradian").value
     sampler_kwargs = dict()
@@ -462,3 +465,15 @@ if __name__ == "__main__":
     fig.suptitle(f"Mock: {qq_true}")
     fig.savefig(f"posteriors-{args.fitter}.png", dpi=300)
     print(f"MAP={points[np.argmax(log_like)]}")
+
+
+    # ---------------
+    # Save samples to a fits file
+    # ---------------
+    sample_table = Table()
+    sample_table['phistar'] = points[:,0]
+    sample_table['mstar']   = -2.5*points[:,1]
+    sample_table['alpha']   = points[:,2]
+    sample_table['loglike'] = log_like
+    sample_table['logw']    = log_w
+    sample_table.write(args.sample_output,format='fits',overwrite=True)
