@@ -44,8 +44,7 @@ if __name__ == "__main__":
     #create parser
     args = parser.parse_args()
 
-    #print important arguments to the
-    #screen
+    #print important arguments to the screen
     if(args.verbose):
         print(f'Number of samples {args.n_samples}')
         print(f'Minimum redshift {args.zmin}')
@@ -53,8 +52,6 @@ if __name__ == "__main__":
         print(f'Minimum Muv {args.loglmin*-2.5}')
         print(f'Maximum Muv {args.loglmax*-2.5}')
         print(f'Replicate input objects? {args.replicate}')
-
-
 
     #compute area
     args.omega = (args.area * arcmin**2).to("steradian").value
@@ -86,8 +83,6 @@ if __name__ == "__main__":
         mab_det_grid  = np.asarray(fits.getdata(args.detection,'MAB'),dtype=np.float32)
         lrh_det_grid  = np.asarray(fits.getdata(args.detection,'LOGRHALF'),dtype=np.float32)
         comp_det_grid = np.asarray(fits.getdata(args.detection,'DET_COMP'),dtype=np.float32)
-
-
 
         #get an interpolator for the detection completeness
         comp_det = CompletenessGrid(comp_det_grid,mab_det_grid,lrh_det_grid)
@@ -125,7 +120,7 @@ if __name__ == "__main__":
     lf = EvolvingSchechter()
     #pdict = dict(phi0=Uniform(mini=-5, maxi=-3),
                  #lstar0=Uniform(mini=(17 / 2.5), maxi=(22 / 2.5)),
-    pdict = dict(  
+    pdict = dict(
                  #phi0=Uniform(mini=-6, maxi=-2),
                  phi0=Uniform(mini=-8, maxi=-2),\
                  phi1=Uniform(mini=-3, maxi=3),\
@@ -170,84 +165,14 @@ if __name__ == "__main__":
     # -------------------
     # --- fitting -------
     # -------------------
+    from infer import fit
     if args.fitter == "nautilus":
-        from nautilus import Prior, Sampler
+        lnprob = lnprobfn_dict
+    else:
+        lnprob = lnprobfn
 
-        prior = Prior()
-        for k in params.param_names:
-            if((k=='phi0')|(k=='lstar0')):
-                prior.add_parameter(k, dist=(pdict[k].params['mini'], pdict[k].params['maxi']))
-            else:
-                prior.add_parameter(k, dist=norm(pdict[k].params['mean'], pdict[k].params['sigma']))
-#                prior.add_parameter(k, dist=(-3, -1))
-
-        #sampler = Sampler(prior, lnprobfn_dict, n_live=1000)
-        sampler = Sampler(prior, lnprobfn_dict, n_live=1000)
-        sampler.run(verbose=args.verbose)
-
-        points, log_w, log_like = sampler.posterior()
-
-    if args.fitter == "ultranest":
-        # --- ultranest ---
-        import ultranest
-        sampler = ultranest.ReactiveNestedSampler(params.free_params, lnprobfn, params.prior_transform)
-        result = sampler.run(**sampler_kwargs)
-
-        points = np.array(result['weighted_samples']['points'])
-        log_w = np.log(np.array(result['weighted_samples']['weights']))
-        log_like = np.array(result['weighted_samples']['logl'])
-
-    if args.fitter == "dynesty":
-        # --- Dynesty ---
-        import dynesty
-        dsampler = dynesty.DynamicNestedSampler(lnprobfn, params.prior_transform,
-                                                len(params.free_params),
-                                                nlive=1000,
-                                                bound='multi', sample="unif",
-                                                walks=48)
-        dsampler.run_nested(n_effective=1000, dlogz_init=0.05)
-
-        points = dsampler.results["samples"]
-        log_w = dsampler.results["logwt"]
-        log_like = dsampler.results["logl"]
-
-    if args.fitter == "emcee":
-        # --- emcee ---
-        assert (not args.evolving)
-        def lnposterior(qq, params=None, data=None, lf=None, veff=None):
-            # need to include the prior for emcee
-            lnp = params.prior_product(qq)
-            lnl = lnlike(qq, data=data, lf=lf, veff=veff)
-            return lnp + lnl
-        lnprobfn = partial(lnposterior, params=params, data=jof, lf=lf, veff=veff)
-        import emcee
-
-        nwalkers, ndim, niter = 32, len(qq_true), 512
-        initial = np.array([params.prior_transform(u)
-                            for u in np.random.uniform(0, 1, (nwalkers, ndim))])
-
-        sampler = emcee.EnsembleSampler(nwalkers, ndim, lnprobfn)
-        sampler.run_mcmc(initial, niter, progress=True)
-
-        points = sampler.flatchain
-        log_w = None
-        log_like = sampler.flatlnprobability
-
-    if args.fitter == "brute":
-        # -- Brute Force on a grid ---
-        assert (not args.evolving)
-        from itertools import product
-        phi_grid = 10**np.linspace(-5, -3, 30)
-        lstar_grid = 10**np.linspace(19/2.5, 22/2.5, 30)
-        alpha_grid = np.linspace(-2.5, -1.5, 30)
-        qqs = np.array(list(product(phi_grid, lstar_grid, alpha_grid)))
-        lnp = np.zeros(len(qqs))
-        for i, qq in enumerate(qqs):
-            lnp[i] = lnprobfn(qq)
-
-        points = qq
-        log_w = None
-        log_like = lnp
+    result = fit(params, lnprob, fitter=args.fitter, verbose=args.verbose)
+    points, log_w, log_like, sampler = result
 
     # ---------------
     # --- Plotting ---
@@ -278,13 +203,12 @@ if __name__ == "__main__":
     # Save samples to a fits file
     # ---------------
     sample_table = Table()
-    sample_table['phistar'] = points[:,0] 
-    sample_table['mstar']   = -2.5*points[:,1] 
+    sample_table['phistar'] = points[:,0]
+    sample_table['mstar']   = -2.5*points[:,1]
     sample_table['alpha']   = points[:,2]
     sample_table['loglike'] = log_like
     sample_table['logw']    = log_w
-    sample_table.write(args.sample_output,format='fits',overwrite=True) 
-
+    sample_table.write(args.sample_output,format='fits',overwrite=True)
 
     # - luminosity density -
     from infer import transform

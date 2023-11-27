@@ -89,6 +89,12 @@ def create_parser():
         help='Model LF as complete? (default: False)',
         default=False)
 
+    parser.add_argument('--fake_flag',
+        dest='fake_flag',
+        action='store_true',
+        help='Model LF with a fake completeness function?',
+        default=False)
+
     #Verbosity
     parser.add_argument('-v', '--verbose',
         dest='verbose',
@@ -430,6 +436,7 @@ class EffectiveVolumeGrid:
     def data(self):
         return self.values
 
+
 class CompletenessGrid:
     """Thin wrapper on RegularGridInterpolator that keeps track of the grid points and grid values
     """
@@ -543,9 +550,12 @@ def sigmoid(x):
 # ------------------------------
 def construct_effective_volume(loglgrid, zgrid, omega,
                      completeness_kwargs={},
-                     selection_kwargs={},fake_flag=False,comp_sel=None,comp_det=None,
-                     muv_min=27,muv_max=32,
-                     f_cover = 1,
+                     selection_kwargs={},
+                     fake_flag=False,
+                     comp_sel=None,
+                     comp_det=None,
+                     muv_min=27, muv_max=32,
+                     f_cover=1,
                      as_interpolator=True):
     """compute this on a grid of z and Muv
 
@@ -565,7 +575,6 @@ def construct_effective_volume(loglgrid, zgrid, omega,
 
 
     #use a fake completeness or simulated completeness?
-    
     if(fake_flag):
 
         # Fake completeness function
@@ -579,7 +588,6 @@ def construct_effective_volume(loglgrid, zgrid, omega,
         print(veff.shape)
 
     else:
-
         #initialize veff
         veff = volume
 
@@ -587,14 +595,16 @@ def construct_effective_volume(loglgrid, zgrid, omega,
         if(comp_det is not None):
 
             #use an actual completeness function
-            mab_clip_grid = np.clip(muv,muv_min,muv_max)
+            mab_clip_grid = np.clip(muv, muv_min, muv_max)
 
             #fake size
             #lrh = np.full_like(zgrid,-1.5)
 
             #apply completeness
-            cd = comp_det((mab_clip_grid,-1.5)) #pretend all sizes are logrh<=-1.5
+            cd = comp_det((mab_clip_grid, -1.5)) #pretend all sizes are logrh<=-1.5
             veff = cd*veff # apply completeness
+        else:
+            veff = np.ones(len(loglgrid))[:, None] * veff
 
         #apply selection completeness
         if(comp_sel is not None):
@@ -603,9 +613,8 @@ def construct_effective_volume(loglgrid, zgrid, omega,
             print(x.shape)
             print(y.shape)
             cs = comp_sel((x,y))
+
             #print(f'cs.shape {cs.shape}')
-
-
             #plt.clf()
             #plt.imshow(cs,origin='lower')
             #plt.savefig('test.png')
@@ -613,12 +622,12 @@ def construct_effective_volume(loglgrid, zgrid, omega,
 
             #apply completeness
             veff = cs*veff # apply completeness
+        else:
+            veff = np.ones(len(loglgrid))[:, None] * veff
 
 
     #apply covering factor
     veff *= f_cover
-
-
 
     #create an interpolator
     if as_interpolator:
@@ -731,6 +740,7 @@ if __name__ == "__main__":
     completeness_kwargs = {'flag_complete': args.complete}
     veff = construct_effective_volume(loglgrid, zgrid, omega,
                                       completeness_kwargs,
+                                      fake_flag=True,
                                       as_interpolator=True)
 
     dN, dV = s.n_effective(veff)
@@ -743,9 +753,9 @@ if __name__ == "__main__":
         print(f'Cosmology: h = {cosmo.h}, Omega_m = {cosmo.Om0}')
         print(f'Effective volume = {V_bar} [Mpc^3].')
         print(f'Number density = {N_bar/V_bar} [Mpc^-3]')
-        print(f'Number density (analytical) = {s.nl(zgrid,lmin=7.2,lmax=25.)[0]} [Mpc^-3]')
-        print(f'Luminosity density (analytical, MUV<-18) = {s.rhol(zgrid,lmin=7.2,lmax=25.)[0]/1e25} [10^25 erg s^-1 Hz^-1 Mpc^-3]')
-        print(f'Luminosity density (analytical, Total) = {s.rhol(zgrid,lmin=-10,lmax=25.)[0]/1e25} [10^25 erg s^-1 Hz^-1 Mpc^-3]')
+        print(f'Number density (analytical) = {s.nl(zgrid, lmin=7.2, lmax=25.)} [Mpc^-3]')
+        print(f'Luminosity density (analytical, MUV<-18) = {s.rhol(zgrid,lmin=7.2,lmax=25.) / 1e25} [10^25 erg s^-1 Hz^-1 Mpc^-3]')
+        print(f'Luminosity density (analytical, Total) = {s.rhol(zgrid,lmin=-10,lmax=25.) / 1e25} [10^25 erg s^-1 Hz^-1 Mpc^-3]')
 
     N = np.random.poisson(N_bar, size=1)[0]
     note = f"Drew {N} galaxies from expected total of {N_bar:.2f}"

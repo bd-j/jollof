@@ -116,7 +116,7 @@ def make_mock(loglgrid, zgrid, omega,
     veff = construct_effective_volume(loglgrid, zgrid, omega,
                                       completeness_kwargs=completeness_kwargs,
                                       selection_kwargs=selection_kwargs,
-                                      fake_flag=True,
+                                      fake_flag=False,
                                       as_interpolator=True)
 
     dN, dV = lf.n_effective(veff)
