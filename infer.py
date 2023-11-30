@@ -184,7 +184,10 @@ def transform(qq, lf=None, evolving=False):
     """Transform from sampling parameters to evolving LF parameters
     """
     if evolving:
-        q = qq
+        if(evolving==2):
+            q = np.array([qq[0], qq[1], qq[2], 0, qq[3]])
+        else:
+            q = qq
     else:
         # non-evolving
         q = np.array([qq[0], 0, qq[1], 0, qq[2]])
@@ -382,7 +385,10 @@ if __name__ == "__main__":
                  lstar1=Uniform(mini=-3, maxi=3),
                  alpha=Normal(mean=-2, sigma=0.05))
     if args.evolving:
-        param_names = ["phi0", "phi1", "lstar0", "lstar1", "alpha"]
+        if(args.evolving==2):
+            param_names = ["phi0", "phi1", "lstar0", "alpha"]
+        else:
+            param_names = ["phi0", "phi1", "lstar0", "lstar1", "alpha"]
     else:
         param_names = ["phi0", "lstar0", "alpha"]
     params = Parameters(param_names, pdict)
@@ -392,7 +398,10 @@ if __name__ == "__main__":
     # -------------------
     q_true = np.array([-4, 0, (21 / 2.5), 0, -2.0])
     if args.evolving:
-        qq_true = q_true
+        if(args.evolving==2):
+            qq_true = np.array([q_true[0], q_true[1], q_true[2], q_true[4]])
+        else:
+            qq_true = q_true
     else:
         qq_true = np.array([q_true[0], q_true[2], q_true[4]])
 
@@ -426,11 +435,18 @@ if __name__ == "__main__":
     lnprobfn = partial(lnlike, data=mock, lf=lf, veff=veff, evolving=args.evolving)
 
     if args.evolving:
-        def lnprobfn_dict(param_dict):
-            qq = np.array([param_dict['phi0'], param_dict['phi1'],
+        if(args.evolving==2):
+            def lnprobfn_dict(param_dict):
+                qq = np.array([param_dict['phi0'], param_dict['phi1'],
+                           param_dict['lstar0'],
+                           param_dict['alpha']])
+                return lnprobfn(qq)
+        else:
+            def lnprobfn_dict(param_dict):
+                qq = np.array([param_dict['phi0'], param_dict['phi1'],
                            param_dict['lstar0'], param_dict['lstar1'],
                            param_dict['alpha']])
-            return lnprobfn(qq)
+                return lnprobfn(qq)
     else:
         def lnprobfn_dict(param_dict):
             qq = np.array([param_dict['phi0'], param_dict['lstar0'], param_dict['alpha']])

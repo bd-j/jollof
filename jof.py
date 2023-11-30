@@ -133,7 +133,10 @@ if __name__ == "__main__":
 #                 alpha=Uniform(mini=-2.5, maxi=-1.5))
 
     if args.evolving:
-        param_names = ["phi0", "phi1", "lstar0", "lstar1", "alpha"]
+        if(args.evolving==2):
+            param_names = ["phi0", "phi1", "lstar0", "alpha"]
+        else:
+            param_names = ["phi0", "phi1", "lstar0", "lstar1", "alpha"]
     else:
         param_names = ["phi0", "lstar0", "alpha"]
     params = Parameters(param_names, pdict)
@@ -143,7 +146,11 @@ if __name__ == "__main__":
     # -------------------
     q_true = np.array([-4, 0, (21 / 2.5), 0, -1.7])
     if args.evolving:
-        qq_true = q_true
+        if(args.evolving==2):
+            qq_true = np.array([q_true[0], q_true[1], q_true[2], q_true[4]])
+        else:
+            qq_true = q_true
+
     else:
         qq_true = np.array([q_true[0], q_true[2], q_true[4]])
 
@@ -154,11 +161,18 @@ if __name__ == "__main__":
     lnprobfn = partial(lnlike, data=jof, lf=lf, veff=veff, evolving=args.evolving)
 
     if args.evolving:
-        def lnprobfn_dict(param_dict):
-            qq = np.array([param_dict['phi0'], param_dict['phi1'],
-                           param_dict['lstar0'], param_dict['lstar1'],
-                           param_dict['alpha']])
-            return lnprobfn(qq)
+        if(args.evolving==2):
+            def lnprobfn_dict(param_dict):
+                qq = np.array([param_dict['phi0'], param_dict['phi1'],
+                               param_dict['lstar0'],
+                               param_dict['alpha']])
+                return lnprobfn(qq)
+        else:
+            def lnprobfn_dict(param_dict):
+                qq = np.array([param_dict['phi0'], param_dict['phi1'],
+                               param_dict['lstar0'], param_dict['lstar1'],
+                               param_dict['alpha']])
+                return lnprobfn(qq)
     else:
         def lnprobfn_dict(param_dict):
             qq = np.array([param_dict['phi0'], param_dict['lstar0'], param_dict['alpha']])
