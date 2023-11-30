@@ -423,7 +423,12 @@ class EvolvingSchecterPoly(EvolvingSchechter):
 class EffectiveVolumeGrid:
     """Thin wrapper on RegularGridInterpolator that keeps track of the grid points and grid values
     """
-    def __init__(self, loglgrid, zgrid, veff):
+    def __init__(self, loglgrid=None, zgrid=None, veff=None,
+                 fromfitsfile=None):
+
+        if fromfitsfile is not None:
+            loglgrid, zgrid, veff = self.from_fits(fromfitsfile)
+
         self.values = veff
         self.loglgrid = loglgrid
         self.lgrid = 10**loglgrid
@@ -444,12 +449,22 @@ class EffectiveVolumeGrid:
     def to_fits(self, fitsfilename):
         v = fits.ImageHDU(self.values, name="VEFF")
         v.header["UNITS"] = "differential effective volume in Mpc**3/redshift"
-        l = fits.ImageHDU(self.loglgrid, name="LOGL")
+        l = fits.ImageHDU(-2.5*self.loglgrid, name="MUV")
         l.header["UNITS"] = "log_10(absolute maggies)"
         z = fits.ImageHDU(self.zgrid, name="Z")
         hdul = fits.HDUList([fits.PrimaryHDU(),
                              v, l, z])
         hdul.writeto(fitsfilename, overwrite=True)
+
+    def from_fits(self, filename):
+        with fits.open(filename) as hdul:
+            veff = hdul["VEFF"].data[:]
+            try:
+                loglgrid = -0.4 * hdul["MUV"].data[:]
+            except(KeyError):
+                loglgrid = hdul["LOGL"].data[:]
+            zgrid = hdul["Z"].data[:]
+        return loglgrid, zgrid, veff
 
 
 class CompletenessGrid:

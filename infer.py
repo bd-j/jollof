@@ -10,7 +10,7 @@ from scipy.stats import norm
 
 from lf import create_parser
 from lf import EvolvingSchechter, sample_twod
-from lf import construct_effective_volume
+from lf import construct_effective_volume, EffectiveVolumeGrid
 from lf import lum_to_mag, mag_to_lum, arcmin
 
 from priors import Parameters, Uniform, Normal
@@ -401,6 +401,7 @@ if __name__ == "__main__":
                                  "ultranest", "nautilus"])
     parser.add_argument("--n_samples", type=int, default=1)
     parser.add_argument("--evolving", type=int, default=0)
+    parser.add_argument("--regenerate_mock", type=int, default=1)
     parser.add_argument("--sample_output", type=str, default='samples.fits')
 
     args = parser.parse_args()
@@ -434,7 +435,7 @@ if __name__ == "__main__":
     # -------------------
     # --- Truth ---
     # -------------------
-    q_true = np.array([-4, 0, (21 / 2.5), 0, -2.0])
+    q_true = np.array([-4, -0.2, (21 / 2.5), 0, -2.0])
     if args.evolving:
         if(args.evolving==2):
             qq_true = np.array([q_true[0], q_true[1], q_true[2], q_true[4]])
@@ -446,24 +447,30 @@ if __name__ == "__main__":
     # -----------------------
     # --- build mock data ---
     # -----------------------
-    mock, veff = make_mock(loglgrid, zgrid, args.omega,
-                           q_true, lf=lf,
-                           sigma_logz=0.05,
-                           sigma_flux=0.1/maggies_to_nJy,
-                           n_samples=args.n_samples,
-                           fake_flag=args.fake_flag)
-    print(f"{len(mock.all_samples)} objects drawn from this LF x Veff")
-    dN, _ = lf.n_effective(veff)
+    if args.regenerate_mock:
+        mock, veff = make_mock(loglgrid, zgrid, args.omega,
+                            q_true, lf=lf,
+                            sigma_logz=0.05,
+                            sigma_flux=0.1/maggies_to_nJy,
+                            n_samples=args.n_samples,
+                            fake_flag=args.fake_flag)
+        print(f"{len(mock.all_samples)} objects drawn from this LF x Veff")
+        dN, _ = lf.n_effective(veff)
 
-    fig, ax = pl.subplots()
-    cb = ax.imshow(np.log(dN), origin="lower", cmap="Blues", alpha=0.8,
-                   extent=[zgrid.min(), zgrid.max(), loglgrid.min(), loglgrid.max()],
-                   aspect="auto")
-    _, ax = mock.show(ax=ax)
-    fig.colorbar(cb, label="ln(dN)")
-    fig.savefig("mock_samples.png", dpi=300)
-    mock.to_fits("mock_data.fits")
-    veff.to_fits("mock_veff.fits")
+        fig, ax = pl.subplots()
+        dens = np.log10(dN)
+        cb = ax.imshow(dens, origin="lower", cmap="Blues", alpha=0.8,
+                       vmax=dens.max(), vmin=dens.max()-5,
+                    extent=[zgrid.min(), zgrid.max(), loglgrid.min(), loglgrid.max()],
+                    aspect="auto")
+        _, ax = mock.show(ax=ax)
+        fig.colorbar(cb, label="log(dN)")
+        fig.savefig("mock_samples.png", dpi=300)
+        mock.to_fits("mock_data.fits")
+        veff.to_fits("mock_veff.fits")
+    else:
+        mock = DataSamples(filename="mock_data.fits", n_samples=args.n_samples)
+        veff = EffectiveVolumeGrid(fromfitsfile="mock_veff.fits")
 
     #sys.exit()
 
