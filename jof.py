@@ -43,6 +43,8 @@ if __name__ == "__main__":
                         default=0)
     parser.add_argument("--f_cover", type=float,
                         default=1)
+    parser.add_argument("--zref", type=float,
+                        default=14)
     #create parser
     args = parser.parse_args()
 
@@ -120,7 +122,7 @@ if __name__ == "__main__":
     # ---------------------------
     # --- Set up model and priors
     # ---------------------------
-    lf = EvolvingSchechter()
+    lf = EvolvingSchechter(zref=args.zref)
     #pdict = dict(phi0=Uniform(mini=-5, maxi=-3),
                  #lstar0=Uniform(mini=(17 / 2.5), maxi=(22 / 2.5)),
     pdict = dict(
@@ -220,9 +222,15 @@ if __name__ == "__main__":
     # Save samples to a fits file
     # ---------------
     sample_table = Table()
-    sample_table['phistar'] = points[:,0]
-    sample_table['mstar']   = -2.5*points[:,1]
-    sample_table['alpha']   = points[:,2]
+    if(args.evolving==2):
+        sample_table['phistar'] = points[:,0]
+        sample_table['dphidz']  = points[:,1]
+        sample_table['mstar']   = -2.5*points[:,2]
+        sample_table['alpha']   = points[:,3]
+    else:
+        sample_table['phistar'] = points[:,0]
+        sample_table['mstar']   = -2.5*points[:,1]
+        sample_table['alpha']   = points[:,2]
     sample_table['loglike'] = log_like
     sample_table['logw']    = log_w
     sample_table.write(args.sample_output,format='fits',overwrite=True)

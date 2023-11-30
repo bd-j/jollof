@@ -161,7 +161,8 @@ class EvolvingSchechter:
         self.alpha = self._alphas[0]
 
         # --- phi = phi_0 \, (1+z)^\beta ----
-        zz = np.log10((1 + z) / (1 + self.zref))
+#        zz = np.log10((1 + z) / (1 + self.zref))
+        zz = z-self.zref
 
         logphi = self._phis[0] + self._phis[1] * zz
         self.phi = 10**logphi
