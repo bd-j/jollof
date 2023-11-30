@@ -103,6 +103,9 @@ def create_parser():
         help='Print helpful information to the screen? (default: False)',
         default=False)
 
+    parser.add_argument("--zref", type=float,
+                        default=14)
+
     return parser
 
 #########################################
@@ -595,7 +598,10 @@ def construct_effective_volume(loglgrid, zgrid, omega,
         #print(f'Completeness {completeness.shape} {completeness[0]}')
 
         # Fake selection function
-        selection_function = completeness * (muv < 31)
+        fsel = (muv < 31)
+        zsel = sigmoid((zgrid - 11) / 0.25) * sigmoid((18 - zgrid) / 0.25)
+        zsel = zsel * (zgrid > 9) * (zgrid < 20)
+        selection_function = completeness * fsel * zsel[None, :]
 
         veff = selection_function * volume
         print(veff.shape)

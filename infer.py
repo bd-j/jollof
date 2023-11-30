@@ -19,6 +19,9 @@ from priors import Parameters, Uniform, Normal
 maggies_to_nJy = 3631e9
 
 
+# ------------------------
+# Data storage (and mocks)
+# ------------------------
 class DataSamples:
     """Holds posterior samples for logL and zred for all objects being used to
     constrain the LF.  Optionally include flux samples to incorporate k-correction effects or other
@@ -413,7 +416,7 @@ if __name__ == "__main__":
     # ---------------------------
     # --- Set up model and priors
     # ---------------------------
-    lf = EvolvingSchechter()
+    lf = EvolvingSchechter(zref=args.zref)
     pdict = dict(phi0=Uniform(mini=-5, maxi=-3),
                  phi1=Uniform(mini=-3, maxi=3),
                  lstar0=Uniform(mini=(19 / 2.5), maxi=(22 / 2.5)),
@@ -453,7 +456,7 @@ if __name__ == "__main__":
     dN, _ = lf.n_effective(veff)
 
     fig, ax = pl.subplots()
-    ax.imshow(dN, origin="lower", cmap="Blues", alpha=0.5,
+    ax.imshow(dN, origin="lower", cmap="Blues", alpha=1.0,
               extent=[zgrid.min(), zgrid.max(), loglgrid.min(), loglgrid.max()],
               aspect="auto")
     _, ax = mock.show(ax=ax)
@@ -469,19 +472,19 @@ if __name__ == "__main__":
     assert np.isfinite(params.prior_product(qq_true))
     lnprobfn = partial(lnlike, data=mock, lf=lf, veff=veff, evolving=args.evolving)
 
-    if args.evolving:
-        if(args.evolving==2):
-            def lnprobfn_dict(param_dict):
-                qq = np.array([param_dict['phi0'], param_dict['phi1'],
+    # for nautilus
+    if (args.evolving == 2):
+        def lnprobfn_dict(param_dict):
+            qq = np.array([param_dict['phi0'], param_dict['phi1'],
                            param_dict['lstar0'],
                            param_dict['alpha']])
-                return lnprobfn(qq)
-        else:
-            def lnprobfn_dict(param_dict):
-                qq = np.array([param_dict['phi0'], param_dict['phi1'],
+            return lnprobfn(qq)
+    elif (args.evolving == 1):
+        def lnprobfn_dict(param_dict):
+            qq = np.array([param_dict['phi0'], param_dict['phi1'],
                            param_dict['lstar0'], param_dict['lstar1'],
                            param_dict['alpha']])
-                return lnprobfn(qq)
+            return lnprobfn(qq)
     else:
         def lnprobfn_dict(param_dict):
             qq = np.array([param_dict['phi0'], param_dict['lstar0'], param_dict['alpha']])
@@ -527,4 +530,4 @@ if __name__ == "__main__":
     sample_table['alpha']   = points[:,2]
     sample_table['loglike'] = log_like
     sample_table['logw']    = log_w
-    sample_table.write(args.sample_output,format='fits',overwrite=True)
+    sample_table.write(args.sample_output, format='fits', overwrite=True)

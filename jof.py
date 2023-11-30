@@ -43,8 +43,6 @@ if __name__ == "__main__":
                         default=0)
     parser.add_argument("--f_cover", type=float,
                         default=1)
-    parser.add_argument("--zref", type=float,
-                        default=14)
     #create parser
     args = parser.parse_args()
 
