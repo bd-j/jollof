@@ -456,10 +456,11 @@ if __name__ == "__main__":
     dN, _ = lf.n_effective(veff)
 
     fig, ax = pl.subplots()
-    ax.imshow(dN, origin="lower", cmap="Blues", alpha=1.0,
-              extent=[zgrid.min(), zgrid.max(), loglgrid.min(), loglgrid.max()],
-              aspect="auto")
+    cb = ax.imshow(np.log(dN), origin="lower", cmap="Blues", alpha=0.8,
+                   extent=[zgrid.min(), zgrid.max(), loglgrid.min(), loglgrid.max()],
+                   aspect="auto")
     _, ax = mock.show(ax=ax)
+    fig.colorbar(cb, label="ln(dN)")
     fig.savefig("mock_samples.png", dpi=300)
     mock.to_fits("mock_data.fits")
     veff.to_fits("mock_veff.fits")
