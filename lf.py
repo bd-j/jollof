@@ -364,26 +364,6 @@ class EvolvingSchechter:
         fig.savefig("lf_samples.png")
         return loglums, zs
 
-class EvolvingSchechterExpFixedLstar(EvolvingSchechter):
-
-    def set_redshift(self, z=None):
-        """Use the model parameter values to compute the LF parameters at the
-        given redshifts, and cache them
-        """
-        if z is None:
-            z = self.zref
-
-        self.alpha = self._alphas
-
-        # --- phi = phi_0 \, \exp{\beta \, \Delta z} ---
-        zz = z - self.zref
-
-        logphi = self._phis[0] + self._phis[1] * zz
-        self.phi = 10**logphi
-
-        loglstar = self._lstars[0]
-        self.lstar = 10**loglstar
-
 class EvolvingSchechterExp(EvolvingSchechter):
 
     def set_redshift(self, z=None):
