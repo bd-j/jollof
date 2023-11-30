@@ -109,10 +109,11 @@ class DataSamples:
         hdul.writeto(fitsfilename, overwrite=True)
 
 
-def make_mock(loglgrid, zgrid, omega,
-              q_true, lf=EvolvingSchechter(),
+def make_mock(loglgrid, zgrid, omega, q_true,
+              lf=EvolvingSchechter(),
               n_samples=100,
-              sigma_logz=0.1, sigma_flux=1/maggies_to_nJy,
+              sigma_logz=0.1,
+              sigma_flux=1/maggies_to_nJy,
               completeness_kwargs={},
               selection_kwargs={},
               fake_flag=True,
@@ -218,6 +219,11 @@ def lnlike(qq, data=None, veff=None, fast=True,
     lf : instance of EvolvingSchecter
 
     veff : instance of EffectiveVolumeGrid
+
+    Returns
+    -------
+    lnp : float
+        The ln-probability
     """
     null = -np.inf
 
@@ -273,6 +279,34 @@ def lnlike(qq, data=None, veff=None, fast=True,
 # -----------------------
 def fit(params, lnprobfn, verbose=False,
         fitter="nautilus", sampler_kwargs=dict()):
+    """Fit model parameters to data using the supplied lnprobfn
+
+    Parameters
+    ----------
+    params : a Parameters() instantance
+        The parameters and their priors
+
+    lnprobfn : callable
+        The likelihood function, must take a (ndim,) shaped array of floats
+        corresponding to params.free_params
+
+    fitter : string
+        Type of fitting to do
+
+    Returns
+    -------
+    points : ndarray of shape (nsamples, ndim)
+        Posterior samples
+
+    log_w : ndarray of shape (nsamples,)
+        The ln of the weight for each sample
+
+    log_like : ndarray of shape (nsamples,)
+        The ln of the likelihood for each sample
+
+    sampler : object
+        The sampler object used in the fit, depends on the fitting method used.
+    """
 
     if fitter == "nautilus":
         from nautilus import Prior, Sampler
@@ -351,6 +385,7 @@ def fit(params, lnprobfn, verbose=False,
         points = qq
         log_w = None
         log_like = lnp
+        sampler = None
 
     return points, log_w, log_like, sampler
 

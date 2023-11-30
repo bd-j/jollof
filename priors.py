@@ -389,6 +389,7 @@ class ClippedNormal(Prior):
     prior_params = ['mean', 'sigma', 'mini', 'maxi']
     distribution = scipy.stats.truncnorm
 
+    @property
     def kind(self):
         return "ClippedNormal"
 
@@ -426,9 +427,12 @@ class LogUniform(Prior):
     :param maxi:
         Maximum of the distribution
     """
-    name = "LogUniform"
     prior_params = ['mini', 'maxi']
     distribution = scipy.stats.reciprocal
+
+    @property
+    def kind(self):
+        return "LogUniform"
 
     @property
     def args(self):
@@ -459,9 +463,12 @@ class Beta(Prior):
 
     :param beta:
     """
-    name = "Beta"
     prior_params = ['mini', 'maxi', 'alpha', 'beta']
     distribution = scipy.stats.beta
+
+    @property
+    def kind(self):
+        return "Beta"
 
     @property
     def scale(self):
@@ -502,9 +509,12 @@ class LogNormal(Prior):
         Standard deviation of the distribution of the natural log of the
         variable.
     """
-    name = "LogNormal"
     prior_params = ['mode', 'sigma']
     distribution = scipy.stats.lognorm
+
+    @property
+    def kind(self):
+        return "LogNormal"
 
     @property
     def args(self):
@@ -540,9 +550,12 @@ class StudentT(Prior):
     :param df:
         Number of degrees of freedom
     """
-    name = "StudentT"
     prior_params = ['mean', 'scale', 'df']
     distribution = scipy.stats.t
+
+    @property
+    def kind(self):
+        return "StudentT"
 
     @property
     def args(self):

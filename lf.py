@@ -11,7 +11,8 @@ from astropy.units import arcmin
 
 # TODO:  rewrite everything in jax.
 
-__all__ = ['EvolvingSchechter', 'EffectiveVolumeGrid',
+__all__ = ['EvolvingSchechter', 'EvolvingSchechterExp',
+           'EffectiveVolumeGrid', 'CompletenessGrid',
            'sample_twod',
            'lum_to_mag', 'mag_to_lum',
            ]
@@ -105,7 +106,7 @@ def create_parser():
     return parser
 
 #########################################
-# Schechter function in log_10 L
+# Schechter function in log_10 L.  reference implementation, not used.
 #########################################
 def log_schechter(logl, logphi, loglstar, alpha, l_min=None):
     """
@@ -365,6 +366,7 @@ class EvolvingSchechter:
         fig.savefig("lf_samples.png")
         return loglums, zs
 
+
 class EvolvingSchechterExp(EvolvingSchechter):
 
     def set_redshift(self, z=None):
@@ -585,7 +587,6 @@ def construct_effective_volume(loglgrid, zgrid, omega,
     volume = omega * cosmo.differential_comoving_volume(zgrid).value
     muv = lum_to_mag(loglgrid[:, None], zgrid) #apparent
 
-
     #use a fake completeness or simulated completeness?
     if(fake_flag):
 
@@ -637,7 +638,6 @@ def construct_effective_volume(loglgrid, zgrid, omega,
         else:
             veff = np.ones(len(loglgrid))[:, None] * veff
 
-
     #apply covering factor
     veff *= f_cover
 
@@ -647,6 +647,7 @@ def construct_effective_volume(loglgrid, zgrid, omega,
 
     #return the grid or interpolator
     return veff
+
 
 # --------------------
 # --- Completeness ---
