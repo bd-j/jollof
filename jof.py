@@ -19,7 +19,6 @@ from priors import Parameters, Uniform, Normal
 from scipy.stats import norm, gamma
 
 
-
 if __name__ == "__main__":
 
     parser = create_parser()
@@ -178,7 +177,6 @@ if __name__ == "__main__":
             qq = np.array([param_dict['phi0'], param_dict['lstar0'], param_dict['alpha']])
             return lnprobfn(qq)
 
-
     # -------------------
     # --- fitting -------
     # -------------------
@@ -194,7 +192,6 @@ if __name__ == "__main__":
     # ---------------
     # --- Plotting ---
     # ---------------
-
     import corner
     mle = points[np.argmax(log_like)]
     ndim = points.shape[1]
@@ -238,18 +235,19 @@ if __name__ == "__main__":
     from lf import Maggie_to_cgs
     qq = np.array([transform(p, evolving=args.evolving) for p in points])
 
-    #rhouv = np.array([lf.rhol(q=q) for q in qq])
-    rho_of_z = np.zeros([len(qq), len(veff.zgrid)])
-    for i, q in enumerate(qq):
+    logl = np.linspace(6.8, 9.6, 500)
+    Luv = 10**logl * Maggie_to_cgs
+    rho_uv_array = np.zeros([len(qq), len(zgrid)])
+    for k, q in enumerate(qq):
         lf.set_parameters(q)
-        dN_dV_dlogL = lf.evaluate(veff.loglgrid, veff.zgrid, in_dlogl=True)
-        dL_dV = dN_dV_dlogL * veff.dlogl[:, None] * (veff.lgrid[:, None] * Maggie_to_cgs)
-        rho_of_z[i] = dL_dV.sum(axis=0)
+        phi = lf.evaluate(logl, zgrid, in_dlogl=True)
+        for i, z in enumerate(zgrid):
+            rho_uv_array[k, i] = np.trapz(phi * Luv, x=Luv)
 
     from util import quantile
-    rho_ptile = quantile(rho_of_z.T, [0.16, 0.5, 0.84], weights=np.exp(log_w))
+    rho_ptile = quantile(rho_uv_array.T, [0.16, 0.5, 0.84], weights=np.exp(log_w))
     rfig, rax = pl.subplots()
-    rax.plot(veff.zgrid, rho_of_z[np.argmax(log_like)], label="MAP", color="royalblue")
+    rax.plot(veff.zgrid, rho_uv_array[np.argmax(log_like)], label="MAP", color="royalblue")
     rax.plot(veff.zgrid, rho_ptile[:, 1], label="median", linestyle=":", color="royalblue")
     rax.fill_between(veff.zgrid, rho_ptile[:, 0], y2=rho_ptile[:, -1], color="royalblue",
                      alpha=0.5, label="16th-84th percentile")

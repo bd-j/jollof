@@ -24,7 +24,9 @@ maggies_to_nJy = 3631e9
 # ------------------------
 class DataSamples:
     """Holds posterior samples for logL and zred for all objects being used to
-    constrain the LF.  Optionally include flux samples to incorporate k-correction effects or other
+    constrain the LF.  Optionally include flux samples to incorporate
+    k-correction effects or other selection effects.  Could also include radius
+    samples.
     """
 
     def __init__(self, objects=None, filename=None, ext="SAMPLES", n_samples=1000, replicate=0):
@@ -86,8 +88,9 @@ class DataSamples:
         sample_cols = [("logl_samples", float, (n_samples,)),
                        ("zred_samples", float, (n_samples,)),
                        ("sample_weight", float, (n_samples,))]
-        flux_cols = [("flux_samples", float, (n_samples,))]
-        return np.dtype([("id", int)] + sample_cols + flux_cols + truecols)
+        extras =  ["flux", "rhalf"] # + ["sersic", "q"]
+        extra_cols = [(f"{c}_samples", float, (n_samples,)) for c in extras]
+        return np.dtype([("id", int)] + sample_cols + extra_cols + truecols)
 
     def show(self, n_s=15, ax=None, **plot_kwargs):
         if ax is None:
@@ -121,7 +124,7 @@ def make_mock(loglgrid, zgrid, omega, q_true,
               selection_kwargs={},
               fake_flag=True,
               seed=None):
-    """Draw a set of mock galaxies from a LF x Veff, add noise to them and draew
+    """Draw a set of mock galaxies from a LF x Veff, add noise to them and draw
     samples from that noise
     """
 
@@ -528,6 +531,28 @@ if __name__ == "__main__":
     fig.savefig(f"posteriors-{args.fitter}.png", dpi=300)
     print(f"MAP={points[np.argmax(log_like)]}")
 
+    # - luminosity density -
+    from lf import Maggie_to_cgs
+    n = -5000
+    qq = np.array([transform(p, evolving=args.evolving) for p in points[n:]])
+
+    logl = np.linspace(6.8, 9.6, 100)
+    Luv = 10**logl * Maggie_to_cgs
+    rho_uv_array = np.zeros([len(qq), len(zgrid)])
+    for k, q in enumerate(qq):
+        lf.set_parameters(q)
+        phi = lf.evaluate(logl, zgrid, in_dlogl=True)
+        for i, z in enumerate(zgrid):
+            rho_uv_array[k, i] = np.trapz(phi[:, i] * Luv/lf.lstar[i], x=np.log10(Luv))
+
+    from util import quantile
+    rho_ptile = quantile(rho_uv_array.T, [0.16, 0.5, 0.84], weights=np.exp(log_w[n:]))
+    rfig, rax = pl.subplots()
+    rax.plot(zgrid, rho_uv_array[np.argmax(log_like[n:])], label="MAP", color="royalblue")
+    rax.plot(zgrid, rho_ptile[:, 1], label="median", linestyle=":", color="royalblue")
+    rax.fill_between(veff.zgrid, rho_ptile[:, 0], y2=rho_ptile[:, -1], color="royalblue",
+                     alpha=0.5, label="16th-84th percentile")
+    rax.set_yscale("log")
 
     # ---------------
     # Save samples to a fits file
