@@ -228,28 +228,24 @@ if __name__ == "__main__":
         sample_table['alpha']   = points[:,2]
     sample_table['loglike'] = log_like
     sample_table['logw']    = log_w
-    sample_table.write(args.sample_output,format='fits',overwrite=True)
+    sample_table.write(args.sample_output, format='fits', overwrite=True)
 
     # - luminosity density -
     from infer import transform
-    from lf import Maggie_to_cgs
-    qq = np.array([transform(p, evolving=args.evolving) for p in points])
+    n = -5000  #restrict to samples with non-negligible weights, for speed
+    qq = np.array([transform(p, evolving=args.evolving) for p in points[n:]])
 
-    logl = np.linspace(6.8, 9.6, 500)
-    Luv = 10**logl * Maggie_to_cgs
+    lmin, lmax, nlx = 6.8, 20, 100
     rho_uv_array = np.zeros([len(qq), len(zgrid)])
     for k, q in enumerate(qq):
-        lf.set_parameters(q)
-        phi = lf.evaluate(logl, zgrid, in_dlogl=True)
-        for i, z in enumerate(zgrid):
-            rho_uv_array[k, i] = np.trapz(phi * Luv, x=Luv)
+        rho_uv_array[k, :] = lf.rhol(zgrid, q, lmin, lmax, nlx)
 
     from util import quantile
-    rho_ptile = quantile(rho_uv_array.T, [0.16, 0.5, 0.84], weights=np.exp(log_w))
+    rho_ptile = quantile(rho_uv_array.T, [0.16, 0.5, 0.84], weights=np.exp(log_w[n:]))
     rfig, rax = pl.subplots()
-    rax.plot(veff.zgrid, rho_uv_array[np.argmax(log_like)], label="MAP", color="royalblue")
-    rax.plot(veff.zgrid, rho_ptile[:, 1], label="median", linestyle=":", color="royalblue")
+    rax.plot(zgrid, rho_uv_array[np.argmax(log_like[n:])], label="MAP", color="royalblue")
+    rax.plot(zgrid, rho_ptile[:, 1], label="median", linestyle=":", color="royalblue")
     rax.fill_between(veff.zgrid, rho_ptile[:, 0], y2=rho_ptile[:, -1], color="royalblue",
                      alpha=0.5, label="16th-84th percentile")
     rax.set_yscale("log")
-    pl.savefig('test.png')
+    rfig.savefig('test.png')

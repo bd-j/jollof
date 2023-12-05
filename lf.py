@@ -265,7 +265,6 @@ class EvolvingSchechter:
         if q is not None:
             self.set_parameters(q)
 
-
         #array of luminosity and phi
         l_array   = np.linspace(lmin,lmax,nlx)
         phi_array = np.array(self.evaluate(10**l_array, z, grid=False, in_dlogl=True))
