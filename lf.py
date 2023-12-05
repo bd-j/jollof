@@ -485,11 +485,11 @@ class CompletenessGrid:
             self.dz = np.gradient(zgrid)
             self.interp = RegularGridInterpolator((xgrid, ygrid, zgrid), comp,
                                               bounds_error=False,
-                                              fill_value=None)
+                                              fill_value=0.0)
         else:
             self.interp = RegularGridInterpolator((xgrid, ygrid), comp,
                                               bounds_error=False,
-                                              fill_value=None)
+                                              fill_value=0.0)
 
     def __call__(self, *args, **kwargs):
         return self.interp(*args, **kwargs)
@@ -665,6 +665,7 @@ def construct_effective_volume(loglgrid, zgrid, omega,
 
     #apply covering factor
     veff *= f_cover
+    assert veff.min() >= 0
 
     #create an interpolator
     if as_interpolator:

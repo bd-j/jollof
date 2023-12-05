@@ -228,7 +228,9 @@ if __name__ == "__main__":
         sample_table['alpha']   = points[:,2]
     sample_table['loglike'] = log_like
     sample_table['logw']    = log_w
+    sample_table['points']  = points
     sample_table.write(args.sample_output, format='fits', overwrite=True)
+    veff.to_fits(args.sample_output.replace(".fits", "_veff.fits"))
 
     # - luminosity density -
     from infer import transform
@@ -248,4 +250,4 @@ if __name__ == "__main__":
     rax.fill_between(veff.zgrid, rho_ptile[:, 0], y2=rho_ptile[:, -1], color="royalblue",
                      alpha=0.5, label="16th-84th percentile")
     rax.set_yscale("log")
-    rfig.savefig('test.png')
+    rfig.savefig('jof_rhouv.png')
