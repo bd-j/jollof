@@ -222,7 +222,7 @@ class EvolvingSchechter:
 
         return dN, dV
 
-    def rhol_zgrid(self, zgrid, q=None, lmin=6.8, lmax=20.0, nlx=100):
+    def rhol(self, zgrid, q=None, lmin=6.8, lmax=20.0, nlx=100):
         """Compute the integrated luminosity density
         between lmin and lmax as a function of redshift
 
