@@ -222,28 +222,34 @@ class EvolvingSchechter:
 
         return dN, dV
 
-    def rhol(self, z=None, q=None, lmin=6.8, lmax=20.0, nlx=100):
+    def rhol_zgrid(self, zgrid, q=None, lmin=6.8, lmax=20.0, nlx=100):
         """Compute the integrated luminosity density
         between lmin and lmax as a function of redshift
 
+        Parameters
+        -----------
+        zgrid : ndarray of shape (n_z,) or scalar
+            Redshifts at which to compurte the luminosity density
+
+        q : optional, ndarray of shape ndim,
+            The full set of LF parameters.
+
         Returns
         -------
-        L/Mpc^3
+        rho: ndarry of shape (nz,) or scalar
+            L/Mpc^3 in erg/s/Hz/Mpc^3
         """
         #set parameters if needed
         if q is not None:
             self.set_parameters(q)
-
-        #array of luminosity and phi
-        l_array   = np.linspace(lmin,lmax,nlx)
-        rho_array = (10**l_array)*np.array(self.evaluate(10**l_array, z, grid=False, in_dlogl=True))
-
-        #return rho
-        rho_integrated = np.trapz(rho_array,x=l_array)
-
-        fconv = 4.344211434763621e20 #maggie to erg/s/Hz
-
-        return fconv*rho_integrated #erg/s/Hz/Mpc^3
+        zz = np.atleast_1d(zgrid)
+        logl = np.linspace(lmin, lmax, nlx)
+        Luv = 10**logl * Maggie_to_cgs
+        rho_integrated = np.zeros(len(zz))
+        phi = self.evaluate(10**logl, zz, in_dlogl=True)
+        for i, z in enumerate(zz):
+            rho_integrated[i] = np.trapz(phi[:, i] * Luv, x=np.log10(Luv))
+        return np.squeeze(rho_integrated)
 
     def nl(self, z=None, q=None, lmin=7.0, lmax=20.0, nlx=100):
         """Compute the integrated number density
@@ -268,7 +274,6 @@ class EvolvingSchechter:
         n_integrated = np.trapz(phi_array,x=l_array)
 
         return n_integrated #1/Mpc^3
-
 
     def nM(self, z=None, q=None, Mmin=-22.3, Mmax=-18.0, nMx=100):
         """Compute the integrated number density

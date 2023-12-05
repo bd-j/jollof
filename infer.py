@@ -218,8 +218,8 @@ def lnlike(qq, data=None, veff=None, fast=True,
     qq : ndarray
         LF parameters, in terms of knots of the evolving LF
 
-    data : list of dicts
-        One dict for each object.  The dictionary should have the keys
+    data : DataSamples instance
+        Should have an attribute `all_samples`, structured array with the fields
         'log_samples' and 'zred_samples'
 
     lf : instance of EvolvingSchecter
@@ -247,6 +247,7 @@ def lnlike(qq, data=None, veff=None, fast=True,
     if fast:
         # compute likelihood of all objects, equal number of samples each
         # not actually faster!
+        # This should work when no samples
         l_s, z_s = data.all_samples["logl_samples"], data.all_samples["zred_samples"]
         n_g, n_s = l_s.shape
         l_s, z_s = l_s.flatten(), z_s.flatten()
@@ -521,7 +522,8 @@ if __name__ == "__main__":
 
     print(f'Shape of points {points.shape}')
     fig, axes = pl.subplots(ndim, ndim, figsize=(6., 6.))
-    fig = corner.corner(points, weights=np.exp(log_w), bins=20, labels=params.free_params,
+    fig = corner.corner(points, weights=np.exp(log_w), bins=20,
+                        labels=params.free_params,
                         plot_datapoints=False, plot_density=False,
                         fill_contours=True, levels=(0.68, 0.95),
                         range=np.ones(ndim) * 0.999, fig=fig,
@@ -532,18 +534,13 @@ if __name__ == "__main__":
     print(f"MAP={points[np.argmax(log_like)]}")
 
     # - luminosity density -
-    from lf import Maggie_to_cgs
-    n = -5000
+    n = -5000  #restrict to samples with non-negligible weights, for speed
     qq = np.array([transform(p, evolving=args.evolving) for p in points[n:]])
 
-    logl = np.linspace(6.8, 9.6, 100)
-    Luv = 10**logl * Maggie_to_cgs
+    lmin, lmax, nlx = 6.8, 20, 100
     rho_uv_array = np.zeros([len(qq), len(zgrid)])
     for k, q in enumerate(qq):
-        lf.set_parameters(q)
-        phi = lf.evaluate(logl, zgrid, in_dlogl=True)
-        for i, z in enumerate(zgrid):
-            rho_uv_array[k, i] = np.trapz(phi[:, i] * Luv/lf.lstar[i], x=np.log10(Luv))
+        rho_uv_array[k, :] = lf.rhol(zgrid, q, lmin, lmax, nlx)
 
     from util import quantile
     rho_ptile = quantile(rho_uv_array.T, [0.16, 0.5, 0.84], weights=np.exp(log_w[n:]))
