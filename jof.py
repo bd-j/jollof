@@ -7,16 +7,14 @@ import matplotlib.pyplot as pl
 from astropy.io import fits
 from astropy.table import Table
 
+from lf import create_parser, arcmin
+from lf import EvolvingSchechter
+from lf import CompletenessGrid, construct_effective_volume
+
 from infer import lnlike, DataSamples
-
-from lf import create_parser
-from lf import EvolvingSchechter, construct_effective_volume
-from lf import arcmin
-from lf import plot_selection, plot_detection, CompletenessGrid
-from lf import plot_veff
-
 from priors import Parameters, Uniform, Normal
-from scipy.stats import norm, gamma
+
+from plotting import plot_selection, plot_detection, plot_veff
 
 
 if __name__ == "__main__":
