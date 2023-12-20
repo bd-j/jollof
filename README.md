@@ -1,3 +1,12 @@
+# jollof
+
+Inference of a parametric, evolving LF.
+
+* `lf.py` - The main LF and completeness and effective volume classes
+* `infer.py`- The likelihood, and tools for inferring parameters
+* `jof.py`
+
+
 ```
 python3 jof.py
          --jof_datafile data/samples.v094.baseline_sample.fits \

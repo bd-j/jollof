@@ -1,5 +1,26 @@
 import numpy as np
 
+__all__ = ["sample_twod", "quantile"]
+
+
+# ------------------------------
+# Sample from a 2d histogram
+# ------------------------------
+def sample_twod(X, Y, Z, n_sample=1000):
+
+    sflat = Z.flatten()
+    sind = np.arange(len(sflat))
+    inds = np.random.choice(sind, size=n_sample,
+                            p=sflat / np.nansum(sflat))
+    # TODO: check x, y order here
+    N = len(np.squeeze(Y))
+    xx = inds // N
+    yy = np.mod(inds, N)
+
+    y = np.squeeze(Y)[yy]
+    x = np.squeeze(X)[xx]
+    return x, y
+
 
 def quantile(xarr, q, weights=None):
     """Compute (weighted) quantiles from an input set of samples.

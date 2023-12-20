@@ -3,17 +3,17 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import colormaps
 from scipy.interpolate import RegularGridInterpolator
-from scipy.special import gamma, gammainc, gammasgn
 from astropy.cosmology import Planck15 as cosmo
 from astropy.table import Table
 from astropy.io import fits
 from astropy.units import arcmin
 
+from util import sample_twod
+
 # TODO:  rewrite everything in jax.
 
 __all__ = ['EvolvingSchechter', 'EvolvingSchechterExp',
            'EffectiveVolumeGrid', 'CompletenessGrid',
-           'sample_twod',
            'lum_to_mag', 'mag_to_lum',
            ]
 
@@ -108,15 +108,6 @@ def create_parser():
 
     return parser
 
-#########################################
-# Schechter function in log_10 L.  reference implementation, not used.
-#########################################
-def log_schechter(logl, logphi, loglstar, alpha, l_min=None):
-    """
-    Generate a Schechter function (in dlogl).
-    """
-    phi = ((10**logphi) * np.log(10) * 10**((logl - loglstar) * (alpha + 1)) * np.exp(-10**(logl - loglstar)))
-    return phi
 
 #########################################
 # Convert luminosity to magnitude and vice versa
@@ -140,6 +131,13 @@ class EvolvingSchechter:
     phi : N/Mpc^3/luminosity at lstar
     lstar: luminosity of the exponential cutoff, in absolute maggies (i.e., 10**(-0.4M_{AB}))
     alpha : power law slope below lstar
+
+    The default parameter mapping is:
+        [phi0, phi1, lstar0, lstar1, alpha]
+
+
+    This can be altered by changing the `_<param>_index` arrays.  The evolution
+    is generally computed with respect to a reference redshift, `zref`
     """
     def __init__(self, zref=14, order=1):
         self.zref = zref
@@ -151,19 +149,32 @@ class EvolvingSchechter:
         self._alpha_index = [4]
 
     def set_parameters(self, q):
+        """This picks out the parameters and their evolution from a one dimensional vector, and stores them in internal arrays
+
+        Parameters
+        ----------
+        q : ndarray of shape (npar,)
+        """
         self._phis = q[self._phi_index]
         self._lstars = q[self._lstar_index]
         self._alphas = q[self._alpha_index]
 
     def set_redshift(self, z=None):
         """Use the model parameter values to compute the LF parameters at the
-        given redshifts, and cache them
+        given redshifts, and cache them.
+
+        Parameters
+        ----------
+        z : optional, scalar or ndarray
+            The redshifts at which LF parameters should be computed
+
         """
         if z is None:
             z = self.zref
 
         self.alpha = self._alphas[0]
 
+        # TODO: correct this
         # --- phi = phi_0 \, (1+z)^\beta ----
 #        zz = np.log10((1 + z) / (1 + self.zref))
         zz = z-self.zref
@@ -336,7 +347,8 @@ class EvolvingSchechter:
         hdul = fits.HDUList([phdu, zhdu, lhdu, lfhdu])
         hdul.writeto('lf_evolution.fits', overwrite=True)
 
-    def plot_lf_evolution(self, lgrid, zgrid, in_dlogl=False):
+    def plot_lf_evolution(self, lgrid, zgrid, in_dlogl=False,
+                          filename='./output/lf_evolution.png'):
         """plot the LF evolution
         """
         # get the LF grid
@@ -355,9 +367,10 @@ class EvolvingSchechter:
         ax.set_ylabel(r'$\phi(L)$')
         ax.set_yscale('log')
         ax.tick_params(which='both', direction='in', right=True)
-        plt.savefig('lf_evolution.png', bbox_inches='tight', facecolor='white')
+        plt.savefig(filename, bbox_inches='tight', facecolor='white')
 
-    def sample_lf(self, loglgrid, zgrid, n_sample=100):
+    def sample_lf(self, loglgrid, zgrid, n_sample=100,
+                  filename="./output/lf_samples.png"):
         """Draw some samples from the LF(L, z) distribution and plot them.
         """
         lf = s.evaluate(10**loglgrid, zgrid)
@@ -370,7 +383,7 @@ class EvolvingSchechter:
         ax.set_ylim(-2.5*loglgrid.min(), -2.5*loglgrid.max())
         ax.set_xlabel("redshift")
         ax.set_ylabel(r"M$_{\rm UV}$")
-        fig.savefig("lf_samples.png")
+        fig.savefig(filename)
         return loglums, zs
 
 
@@ -385,6 +398,7 @@ class EvolvingSchechterExp(EvolvingSchechter):
 
         self.alpha = self._alphas
 
+        # TODO: correct this
         # --- phi = phi_0 \, \exp{\beta \, \Delta z} ---
         zz = z - self.zref
 
@@ -413,6 +427,7 @@ class EvolvingSchecterPoly(EvolvingSchechter):
         if z is None:
             z = self.zref
 
+        # TODO: correct this
         # --- phi = pho0 + a_1 \, \Delta z + a_2 \, (\Delta z)^2---
         zz = z - self.zref
         # print(f'zz.shape {zz.shape}')
@@ -498,82 +513,6 @@ class CompletenessGrid:
     def data(self):
         return self.values
 
-# ------------------------------
-# Plot detection completeness grid
-# ------------------------------
-def plot_detection(mab,lrh,comp):
-    f,ax = plt.subplots(1,1,figsize=(6,6))
-    dmab = mab[1]-mab[0]
-    dlrh = lrh[1]-lrh[0]
-    x_min = mab[0]-0.5*dmab
-    x_max = mab[-1]+0.5*dmab
-    y_min = lrh[0]-0.5*dlrh
-    y_max = lrh[-1]+0.5*dlrh
-
-    #im = ax.imshow(comp.T,origin='lower',extent= \
-    x,y = np.meshgrid(mab,lrh)
-    im = ax.imshow(comp((x,y)),origin='lower',extent= \
-        [x_min,x_max,y_min,y_max])
-    ax.set_xlabel('Apparent Magnitude [AB]')
-    ax.set_ylabel('Log10 Rhalf [arcsec]')
-    ax.set_xlim([x_min,x_max])
-    ax.set_ylim([y_min,y_max])
-    ax.set_aspect((x_max-x_min)/(y_max-y_min))
-    cb = f.colorbar(im,ax=ax,label='Completeness',fraction=0.046, pad=0.04)
-    print('Writing detection_completeness.png.')
-    plt.savefig('detection_completeness.png',bbox_inches='tight',dpi=400)
-
-# ------------------------------
-# Plot selection completeness grid
-# ------------------------------
-def plot_selection(z,muv,comp):
-    f,ax = plt.subplots(1,1,figsize=(6,6))
-    dx = z[1]-z[0]
-    dy = muv[1]-muv[0]
-    x_min = z[0]-0.5*dx
-    x_max = z[-1]+0.5*dx
-    y_min = muv[0]-0.5*dy
-    y_max = muv[-1]+0.5*dy
-
-#    im = ax.imshow(comp.T,origin='lower',extent= \
-    x,y = np.meshgrid(z,muv)
-    im = ax.imshow(comp((x,y)),origin='lower',extent= \
-        [x_min,x_max,y_min,y_max])
-    ax.set_xlabel(r'Redshift $z$')
-    ax.set_ylabel('Absolute MUV')
-    ax.set_xlim([x_min,x_max])
-    ax.set_ylim([y_min,y_max])
-    ax.set_aspect((x_max-x_min)/(y_max-y_min))
-    cb = f.colorbar(im,ax=ax,label='Completeness',fraction=0.046, pad=0.04)
-    print('Writing selection_completeness.png.')
-    plt.savefig('selection_completeness.png',bbox_inches='tight',dpi=400)
-
-# ------------------------------
-# Plot effective volume
-# ------------------------------
-def plot_veff(loglgrid,zgrid,veff):
-    f,ax = plt.subplots(1,1,figsize=(6,6))
-    dx = zgrid[1]-zgrid[0]
-    dy = loglgrid[1]-loglgrid[0]
-    x_min = zgrid[0]-0.5*dx
-    x_max = zgrid[-1]+0.5*dx
-    y_min = loglgrid[0]-0.5*dy
-    y_max = loglgrid[-1]+0.5*dy
-
-#    im = ax.imshow(comp.T,origin='lower',extent= \
-    x,y = np.meshgrid(zgrid,loglgrid)
-    veffi = veff((y,x))
-    print(f'Maximum veff {np.max(veffi)}')
-    im = ax.imshow(veffi,origin='lower',extent= \
-        [x_min,x_max,y_min,y_max])
-    ax.set_xlabel(r'Redshift $z$')
-    ax.set_ylabel('Log L')
-    ax.set_xlim([x_min,x_max])
-    ax.set_ylim([y_min,y_max])
-    ax.set_aspect((x_max-x_min)/(y_max-y_min))
-    cb = f.colorbar(im,ax=ax,label='Effective Volume',fraction=0.046, pad=0.04)
-    print('Writing effective_volume.png.')
-    plt.savefig('effective_volume.png',bbox_inches='tight',dpi=400)
 
 # ------------------------------
 # sigmoid to model completeness
@@ -689,29 +628,10 @@ def completeness_function(mag, mag_50=30, dc=0.5, flag_complete=False):
     return completeness
 
 
-# ------------------------------
-# Sample from a 2d histogram
-# ------------------------------
-def sample_twod(X, Y, Z, n_sample=1000):
-
-    sflat = Z.flatten()
-    sind = np.arange(len(sflat))
-    inds = np.random.choice(sind, size=n_sample,
-                            p=sflat / np.nansum(sflat))
-    # TODO: check x, y order here
-    N = len(np.squeeze(Y))
-    xx = inds // N
-    yy = np.mod(inds, N)
-
-    y = np.squeeze(Y)[yy]
-    x = np.squeeze(X)[xx]
-    return x, y
-
-
 ########################
 # The main function
 ########################
-#def main():
+
 if __name__ == "__main__":
 
     # Create the command line argument parser
@@ -749,29 +669,34 @@ if __name__ == "__main__":
     s = EvolvingSchechter()
     s.set_parameters(q_true)
 
+    # ----------------
     # write the parameter evolution to a file
     if (args.verbose):
         print('Recording parameter evolution with redshift...')
     s.record_parameter_evolution(zgrid)
 
+    # --------------------------
     # write the evolving luminosity function
     # to a binary file
     if (args.verbose):
         print('Writing luminosity function evolution to file...')
     s.record_lf_evolution(lgrid, zgrid)
 
+    # -----------------
     # plot the luminosity function evolution
     # and save as a png
     if (args.verbose):
         print('Plotting luminosity function evolution...')
     s.plot_lf_evolution(lgrid, zgrid, in_dlogl=True)
 
+    # ------------
     # sample LF
     if (args.verbose):
         print('sampling from the LF...')
     loglums, zs = s.sample_lf(loglgrid, zgrid, n_sample=100)
 
-    # sample number counts
+    # --------------
+    # sample number counts with a fake selection & completeness
     if (args.verbose):
         print('sampling from the number counts...')
     omega = (args.area * arcmin**2).to("steradian").value
@@ -796,12 +721,15 @@ if __name__ == "__main__":
         print(f'Luminosity density (analytical, MUV<-18) = {s.rhol(zgrid,lmin=7.2,lmax=25.) / 1e25} [10^25 erg s^-1 Hz^-1 Mpc^-3]')
         print(f'Luminosity density (analytical, Total) = {s.rhol(zgrid,lmin=-10,lmax=25.) / 1e25} [10^25 erg s^-1 Hz^-1 Mpc^-3]')
 
+    # -----------------
+    # Make a plot of the effective volume and the drawn galaxies
     N = np.random.poisson(N_bar, size=1)[0]
     note = f"Drew {N} galaxies from expected total of {N_bar:.2f}"
     if args.verbose:
         print(note)
     loglums, zs = sample_twod(loglgrid, zgrid, dN, n_sample=N)
-    fig, axes = plt.subplots(2, 2, sharex='col', sharey='row', gridspec_kw={"height_ratios":[1, 4], "width_ratios":[4, 1]})
+    fig, axes = plt.subplots(2, 2, sharex='col', sharey='row',
+                             gridspec_kw={"height_ratios":[1, 4], "width_ratios":[4, 1]})
     ax = axes[1, 0]
     ax.imshow(dN, origin="lower", cmap="Blues", alpha=0.5,
               extent=[zgrid.min(), zgrid.max(), Muvgrid.max(), Muvgrid.min()],
@@ -821,14 +749,8 @@ if __name__ == "__main__":
     #axes[0, 0].text(1.1, 0.8, note, transform=axes[0, 0].transAxes)
     axes[1,0].text(0.1, 0.9, note, transform=axes[1, 0].transAxes)
     axes[0, 1].set_visible(False)
-    fig.savefig("N_samples.png")
+    fig.savefig("./N_samples.png")
 
     #done!
     print('Done!')
-
-########################
-# Run the program
-########################
-#if __name__ == "__main__":
-#    main()
 
