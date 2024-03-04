@@ -11,7 +11,8 @@ from lf import create_parser, arcmin
 from lf import EvolvingSchechter
 from lf import CompletenessGrid, construct_effective_volume
 
-from infer import lnlike, DataSamples
+from data import DataSamples
+from infer import lnlike, fit
 from priors import Parameters, Uniform, Normal
 
 from plotting import plot_selection, plot_detection, plot_veff
@@ -118,16 +119,12 @@ if __name__ == "__main__":
     # --- Set up model and priors
     # ---------------------------
     lf = EvolvingSchechter(zref=args.zref)
-    #pdict = dict(phi0=Uniform(mini=-5, maxi=-3),
-                 #lstar0=Uniform(mini=(17 / 2.5), maxi=(22 / 2.5)),
     pdict = dict(
-                 #phi0=Uniform(mini=-6, maxi=-2),
                  phi0=Uniform(mini=-8, maxi=-2),\
                  phi1=Uniform(mini=-3, maxi=3),\
                  lstar0=Uniform(mini=(17 / 2.5), maxi=(24 / 2.5)),\
                  lstar1=Uniform(mini=-3, maxi=3),\
                  alpha=Normal(mean=-2.0, sigma=0.1))
-#                 alpha=Uniform(mini=-2.5, maxi=-1.5))
 
     if args.evolving:
         if(args.evolving==2):
@@ -147,7 +144,6 @@ if __name__ == "__main__":
             qq_true = np.array([q_true[0], q_true[1], q_true[2], q_true[4]])
         else:
             qq_true = q_true
-
     else:
         qq_true = np.array([q_true[0], q_true[2], q_true[4]])
 

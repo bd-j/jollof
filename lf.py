@@ -125,7 +125,7 @@ def mag_to_lum(mag, zred):
     return logl
 
 
-class EvolvingSchechter:
+class EvolvingDF:
     """ Class to model an evolving schechter fnc
 
     phi : N/Mpc^3/luminosity at lstar
@@ -139,25 +139,23 @@ class EvolvingSchechter:
     This can be altered by changing the `_<param>_index` arrays.  The evolution
     is generally computed with respect to a reference redshift, `zref`
     """
-    def __init__(self, zref=14, order=1):
+    def __init__(self, zref=14):
         self.zref = zref
-        self.order = order
-
-        # determines mapping from theta vector to parameters
-        self._phi_index = [0, 1]
-        self._lstar_index = [2, 3]
-        self._alpha_index = [4]
+        self.params = [("phi", [0, 1]),
+                       ("lstar", [2, 3]),
+                       ("alpha", [4])
+                       ]
 
     def set_parameters(self, q):
-        """This picks out the parameters and their evolution from a one dimensional vector, and stores them in internal arrays
+        """This picks out the parameters and their evolution from a one
+        dimensional vector, and stores them in internal arrays
 
         Parameters
         ----------
         q : ndarray of shape (npar,)
         """
-        self._phis = q[self._phi_index]
-        self._lstars = q[self._lstar_index]
-        self._alphas = q[self._alpha_index]
+        for p, inds in self.params:
+            setattr(f"_{p}", q[inds])
 
     def set_redshift(self, z=None):
         """Use the model parameter values to compute the LF parameters at the
@@ -171,19 +169,13 @@ class EvolvingSchechter:
         """
         if z is None:
             z = self.zref
-
-        self.alpha = self._alphas[0]
-
-        # TODO: correct this
-        # --- phi = phi_0 \, (1+z)^\beta ----
-#        zz = np.log10((1 + z) / (1 + self.zref))
         zz = z-self.zref
-
-        logphi = self._phis[0] + self._phis[1] * zz
-        self.phi = 10**logphi
-
-        loglstar = self._lstars[0] + self._lstars[1] * zz
-        self.lstar = 10**loglstar
+        for p, inds in self.params:
+            _par = getattr(self, f"_{p}")
+            value, order = 0, len(inds)
+            for i in range(order):
+                value += _par[i] * zz**i
+            setattr(self, p, value)
 
     def evaluate(self, L, z, grid=True, in_dlogl=False):
         """
@@ -197,15 +189,7 @@ class EvolvingSchechter:
 
         """
         self.set_redshift(z)
-        if grid:
-            x = (L[:, None] / self.lstar)
-        else:
-            x = (L / self.lstar)
-        if in_dlogl:
-            factor = np.log(10)
-        else:
-            factor = 1
-        return factor * self.phi * x**(self.alpha + int(in_dlogl)) * np.exp(-x)
+        raise(NotImplementedError)
 
     def n_effective(self, veff):
         """Compute the expected number of objects given a selection function on
@@ -281,14 +265,13 @@ class EvolvingSchechter:
         phi_array = np.array(self.evaluate(10**l_array, z, grid=False, in_dlogl=True))
 
         #return n
-        n_integrated = np.trapz(phi_array,x=l_array)
+        n_integrated = np.trapz(phi_array, x=l_array)
 
         return n_integrated #1/Mpc^3
 
     def nM(self, z=None, q=None, Mmin=-22.3, Mmax=-18.0, nMx=100):
-        """Compute the integrated number density
-        between Mmin and Mmax as a function
-        of redshift
+        """Compute the integrated number density between Mmin and Mmax absolute
+        magnitudes as a function of redshift
 
         Returns
         -------
@@ -387,7 +370,79 @@ class EvolvingSchechter:
         return loglums, zs
 
 
-class EvolvingSchechterExp(EvolvingSchechter):
+class Schechter:
+
+    def __init__(self, zref=14, order=1):
+        self.zref = zref
+        self.order = order
+
+        # determines mapping from theta vector to parameters
+        self._phi_index = [0, 1]
+        self._lstar_index = [2, 3]
+        self._alpha_index = [4]
+
+    def set_parameters(self, q):
+        """This picks out the parameters and their evolution from a one
+        dimensional vector, and stores them in internal arrays
+
+        Parameters
+        ----------
+        q : ndarray of shape (npar,)
+        """
+        self._phis = q[self._phi_index]
+        self._lstars = q[self._lstar_index]
+        self._alphas = q[self._alpha_index]
+
+    def set_redshift(self, z=None):
+        """Use the model parameter values to compute the LF parameters at the
+        given redshifts, and cache them.
+
+        Parameters
+        ----------
+        z : optional, scalar or ndarray
+            The redshifts at which LF parameters should be computed
+
+        """
+        if z is None:
+            z = self.zref
+
+        # TODO: correct this
+        # --- phi = phi_0 \, (1+z)^\beta ----
+#        zz = np.log10((1 + z) / (1 + self.zref))
+        zz = z-self.zref
+
+        self.alpha = self._alphas[0]
+
+        logphi = self._phis[0] + self._phis[1] * zz
+        self.phi = 10**logphi
+
+        loglstar = self._lstars[0] + self._lstars[1] * zz
+        self.lstar = 10**loglstar
+
+    def evaluate(self, L, z, grid=True, in_dlogl=False):
+        """
+        Returns
+        -------
+        dN/(dVdL) where dV is Mpc^3 and dL is in absolute Maggies
+
+        or
+
+        dN/(dVdlogL) where dV is Mpc^3 and dlogL is base log_10(L)
+
+        """
+        self.set_redshift(z)
+        if grid:
+            x = (L[:, None] / self.lstar)
+        else:
+            x = (L / self.lstar)
+        if in_dlogl:
+            factor = np.log(10)
+        else:
+            factor = 1
+        return factor * self.phi * x**(self.alpha + int(in_dlogl)) * np.exp(-x)
+
+
+class EvolvingSchechterExp(EvolvingDF, Schechter):
 
     def set_redshift(self, z=None):
         """Use the model parameter values to compute the LF parameters at the
@@ -409,7 +464,7 @@ class EvolvingSchechterExp(EvolvingSchechter):
         self.lstar = 10**loglstar
 
 
-class EvolvingSchecterPoly(EvolvingSchechter):
+class EvolvingSchecterPoly(EvolvingDF, Schechter):
 
     def __init__(self, zref=14, order=2):
         self.zref = zref
@@ -437,6 +492,85 @@ class EvolvingSchecterPoly(EvolvingSchechter):
         self.lstar = np.dot(np.vander(zz, len(self._lstar_index)), self._lstars)
         self.alpha = np.dot(np.vander(zz, len(self._alpha_index)), self._alphas)
         # print(f'self.phi.shape {self.phi.shape}')
+
+
+class EvolvingDoublePowerLaw(EvolvingDF):
+
+    def __init__(self, zref=14, order=1):
+        self.zref = zref
+        self.order = order
+
+        # determines mapping from theta vector to parameters
+        self._phi_index = [0, 1]
+        self._lstar_index = [2, 3]
+        self._alpha_index = [4] # evolving alpha?
+        self._beta_index = [5]
+
+    def set_parameters(self, q):
+        """This picks out the parameters and their evolution from a one
+        dimensional vector, and stores them in internal arrays
+
+        Parameters
+        ----------
+        q : ndarray of shape (npar,)
+        """
+        self._phis = q[self._phi_index]
+        self._lstars = q[self._lstar_index]
+        self._alphas = q[self._alpha_index]  # faint-end slope
+        self._betas = q[self._beta_index]  # bright end slope
+        self._gamma = 1 # speed of transition
+
+    def set_redshift(self):
+        """Use the model parameter values to compute the LF parameters at the
+        given redshifts, and cache them.
+
+        Parameters
+        ----------
+        z : optional, scalar or ndarray
+            The redshifts at which LF parameters should be computed
+
+        """
+        if z is None:
+            z = self.zref
+        # TODO: correct this
+        # --- phi = phi_0 \, (1+z)^\beta ----
+#        zz = np.log10((1 + z) / (1 + self.zref))
+        zz = z-self.zref
+
+        self.alpha = self._alphas[0]
+        self.beta = self._betas[0]
+        self.gamma = 1
+
+        logphi = self._phis[0] + self._phis[1] * zz
+        self.phi = 10**logphi
+
+        loglstar = self._lstars[0] + self._lstars[1] * zz
+        self.lstar = 10**loglstar
+
+    def evaluate(self, L, z, grid=True, in_dlogl=False):
+        self.set_redshift(z)
+        if grid:
+            x = (L[:, None] / self.lstar)
+        else:
+            x = (L / self.lstar)
+        if in_dlogl:
+            factor = np.log(10)
+        else:
+            factor = 1
+        faint = x**(self.alpha + int(in_dlogl))
+        exp = (self.beta - self.alpha + int(in_dlogl)) / self.gamma
+        bright = (1 + x**self.gamma)**exp
+
+        return factor * self.phi *faint * bright
+
+    def record_parameter_evolution(self, zgrid):
+        pass
+
+    def record_lf_evolution(self, lgrid, zgrid):
+        pass
+
+    def plot_lf_evolution(self):
+        pass
 
 
 class EffectiveVolumeGrid:
