@@ -126,14 +126,7 @@ def mag_to_lum(mag, zred):
 
 
 class EvolvingDF:
-    """ Class to model an evolving schechter fnc
-
-    phi : N/Mpc^3/luminosity at lstar
-    lstar: luminosity of the exponential cutoff, in absolute maggies (i.e., 10**(-0.4M_{AB}))
-    alpha : power law slope below lstar
-
-    The default parameter mapping is:
-        [phi0, phi1, lstar0, lstar1, alpha]
+    """ Class to model an evolving distribution function
 
 
     This can be altered by changing the `_<param>_index` arrays.  The evolution
@@ -293,65 +286,6 @@ class EvolvingDF:
         #return nl
         return self.nl(z=z,q=q,lmin=lmin,lmax=lmax,nlx=nMx)
 
-    def record_parameter_evolution(self, zgrid):
-        """record the LF parameter evolution to an ascii table
-        """
-        # set the redshift evolution
-        # of LF parameters
-        self.set_redshift(zgrid)
-
-        # make a table and save to file
-        t = Table()
-        t['z'] = zgrid
-        t['phi'] = self.phi
-        t['lstar'] = self.lstar
-        t['alpha'] = self.alpha
-        t.write('lf_parameter_evolution.txt', format='ascii', overwrite=True)
-
-    def record_lf_evolution(self, lgrid, zgrid):
-        """record the LF evolution to a fits image
-        """
-        # get the LF grid
-        lf = self.evaluate(lgrid, zgrid)
-
-        # make a column and bin table for luminosity
-        coll = fits.Column(name='luminosity', format='E', array=lgrid)
-        lhdu = fits.BinTableHDU.from_columns([coll], name='luminosity')
-
-        # make a column and bin table for redshift
-        colz = fits.Column(name='redshift', format='E', array=zgrid)
-        zhdu = fits.BinTableHDU.from_columns([colz], name='redshift')
-
-        # record the lf as an image (2D)
-        lfhdu = fits.ImageHDU(name='lf', data=lf)
-
-        # write to a fits file
-        phdu = fits.PrimaryHDU()
-        hdul = fits.HDUList([phdu, zhdu, lhdu, lfhdu])
-        hdul.writeto('lf_evolution.fits', overwrite=True)
-
-    def plot_lf_evolution(self, lgrid, zgrid, in_dlogl=False,
-                          filename='./output/lf_evolution.png'):
-        """plot the LF evolution
-        """
-        # get the LF grid
-        lf = self.evaluate(lgrid, zgrid, in_dlogl=in_dlogl)
-        x = -2.5 * np.log10(lgrid)
-
-        # make a figure
-        cmap = colormaps.get_cmap('turbo')
-        f, ax = plt.subplots(1, 1, figsize=(7, 7))
-        for i in range(len(zgrid)):
-            izg = (zgrid[i] - zgrid[0]) / (zgrid[-1] - zgrid[0])
-            ax.plot(x, lf[:, i], color=cmap(izg))
-        ax.set_xlim([-23, -18])  #ouchi 2009 fig 7
-        ax.set_ylim([4e-7, 1e-2])  #ouchi 2009 fig 7
-        ax.set_xlabel(r'M$_{\rm UV}$')
-        ax.set_ylabel(r'$\phi(L)$')
-        ax.set_yscale('log')
-        ax.tick_params(which='both', direction='in', right=True)
-        plt.savefig(filename, bbox_inches='tight', facecolor='white')
-
     def sample_lf(self, loglgrid, zgrid, n_sample=100,
                   filename="./output/lf_samples.png"):
         """Draw some samples from the LF(L, z) distribution and plot them.
@@ -371,6 +305,14 @@ class EvolvingDF:
 
 
 class Schechter:
+    """ Schechter function with parameters:
+    * phi : N/Mpc^3/luminosity at lstar
+    * lstar: luminosity of the exponential cutoff, in absolute maggies (i.e., 10**(-0.4M_{AB}))
+    * alpha : power law slope below lstar
+
+    The default parameter mapping is:
+        [phi0, phi1, lstar0, lstar1, alpha]
+    """
 
     def __init__(self, zref=14, order=1):
         self.zref = zref
@@ -441,8 +383,71 @@ class Schechter:
             factor = 1
         return factor * self.phi * x**(self.alpha + int(in_dlogl)) * np.exp(-x)
 
+    def record_parameter_evolution(self, zgrid):
+        """record the LF parameter evolution to an ascii table
+        """
+        # set the redshift evolution
+        # of LF parameters
+        self.set_redshift(zgrid)
 
-class EvolvingSchechterExp(EvolvingDF, Schechter):
+        # make a table and save to file
+        t = Table()
+        t['z'] = zgrid
+        t['phi'] = self.phi
+        t['lstar'] = self.lstar
+        t['alpha'] = self.alpha
+        t.write('lf_parameter_evolution.txt', format='ascii', overwrite=True)
+
+    def record_lf_evolution(self, lgrid, zgrid):
+        """record the LF evolution to a fits image
+        """
+        # get the LF grid
+        lf = self.evaluate(lgrid, zgrid)
+
+        # make a column and bin table for luminosity
+        coll = fits.Column(name='luminosity', format='E', array=lgrid)
+        lhdu = fits.BinTableHDU.from_columns([coll], name='luminosity')
+
+        # make a column and bin table for redshift
+        colz = fits.Column(name='redshift', format='E', array=zgrid)
+        zhdu = fits.BinTableHDU.from_columns([colz], name='redshift')
+
+        # record the lf as an image (2D)
+        lfhdu = fits.ImageHDU(name='lf', data=lf)
+
+        # write to a fits file
+        phdu = fits.PrimaryHDU()
+        hdul = fits.HDUList([phdu, zhdu, lhdu, lfhdu])
+        hdul.writeto('lf_evolution.fits', overwrite=True)
+
+    def plot_lf_evolution(self, lgrid, zgrid, in_dlogl=False,
+                          filename='./output/lf_evolution.png'):
+        """plot the LF evolution
+        """
+        # get the LF grid
+        lf = self.evaluate(lgrid, zgrid, in_dlogl=in_dlogl)
+        x = -2.5 * np.log10(lgrid)
+
+        # make a figure
+        cmap = colormaps.get_cmap('turbo')
+        f, ax = plt.subplots(1, 1, figsize=(7, 7))
+        for i in range(len(zgrid)):
+            izg = (zgrid[i] - zgrid[0]) / (zgrid[-1] - zgrid[0])
+            ax.plot(x, lf[:, i], color=cmap(izg))
+        ax.set_xlim([-23, -18])  #ouchi 2009 fig 7
+        ax.set_ylim([4e-7, 1e-2])  #ouchi 2009 fig 7
+        ax.set_xlabel(r'M$_{\rm UV}$')
+        ax.set_ylabel(r'$\phi(L)$')
+        ax.set_yscale('log')
+        ax.tick_params(which='both', direction='in', right=True)
+        plt.savefig(filename, bbox_inches='tight', facecolor='white')
+
+
+class EvolvingSchecter(Schechter, EvolvingDF):
+    pass
+
+
+class EvolvingSchechterExp(EvolvingSchecter):
 
     def set_redshift(self, z=None):
         """Use the model parameter values to compute the LF parameters at the
@@ -464,7 +469,7 @@ class EvolvingSchechterExp(EvolvingDF, Schechter):
         self.lstar = 10**loglstar
 
 
-class EvolvingSchecterPoly(EvolvingDF, Schechter):
+class EvolvingSchecterPoly(EvolvingSchecter):
 
     def __init__(self, zref=14, order=2):
         self.zref = zref
@@ -496,15 +501,14 @@ class EvolvingSchecterPoly(EvolvingDF, Schechter):
 
 class EvolvingDoublePowerLaw(EvolvingDF):
 
-    def __init__(self, zref=14, order=1):
+    def __init__(self, zref=14):
         self.zref = zref
-        self.order = order
 
         # determines mapping from theta vector to parameters
         self._phi_index = [0, 1]
         self._lstar_index = [2, 3]
         self._alpha_index = [4] # evolving alpha?
-        self._beta_index = [5]
+        self._beta_index = [5]  # evolving beta?
 
     def set_parameters(self, q):
         """This picks out the parameters and their evolution from a one
@@ -518,9 +522,9 @@ class EvolvingDoublePowerLaw(EvolvingDF):
         self._lstars = q[self._lstar_index]
         self._alphas = q[self._alpha_index]  # faint-end slope
         self._betas = q[self._beta_index]  # bright end slope
-        self._gamma = 1 # speed of transition
+        self._gamma = 1 # speed of transition, fixed
 
-    def set_redshift(self):
+    def set_redshift(self, z):
         """Use the model parameter values to compute the LF parameters at the
         given redshifts, and cache them.
 
@@ -532,9 +536,6 @@ class EvolvingDoublePowerLaw(EvolvingDF):
         """
         if z is None:
             z = self.zref
-        # TODO: correct this
-        # --- phi = phi_0 \, (1+z)^\beta ----
-#        zz = np.log10((1 + z) / (1 + self.zref))
         zz = z-self.zref
 
         self.alpha = self._alphas[0]
