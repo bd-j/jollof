@@ -21,6 +21,30 @@ def sample_twod(X, Y, Z, n_sample=1000):
     x = np.squeeze(X)[xx]
     return x, y
 
+# ----------------------
+# Posterior predictive
+# ----------------------
+
+def posterior_prediction(df, veff_file, q_true=None):
+    """
+    df: instance of EvolvingDistributionFunction
+    veff_file : name of the effective volume FITS file
+    q_true : optional, the parameters of the DF
+    """
+    from lf import EffectiveVolumeGrid
+    if q_true is not None:
+        df.set_parameters(q_true)
+    veff = EffectiveVolumeGrid(fromfitsfile=veff_file)
+
+    dN, dV = df.n_effective(veff)
+    N_bar = dN.sum()
+    N = np.random.poisson(N_bar, size=1)[0]
+    logl_true, zred_true = sample_twod(veff.loglgrid,
+                                       veff.zgrid,
+                                       dN,
+                                       n_sample=N)
+    return veff, dN, logl_true, zred_true
+
 
 def quantile(xarr, q, weights=None):
     """Compute (weighted) quantiles from an input set of samples.
