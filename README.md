@@ -48,10 +48,9 @@ function of the N-dimensional vector ${\bf x}$.  We denote it $\rho({\bf x} |
 can then ask, given this inhomogenous Poisson process, what is the likelihood of
 observing a particular set of K objects at the values $\{{\bf x}_k\}$?  This is
 given by
+$$p(\{{\bf x}_k\}) = e^{-N_\theta} \prod_{k=1}^K \rho({\bf x}_k | \theta)$$
 
-.$$p(\{{\bf x}_k\}) = e^{-N_\theta} \, \prod_{k=1}^K \rho({\bf x}_k | \theta)$$
-
-where $N_\theta = \int d{\bf x} \, \rho({\bf x} | \theta)$.
+where $N_\theta = \int d{\bf x} \rho({\bf x} | \theta)$.
 Intuitively, you can kind of think of this as an initial 'parsimony' term that
 'wants' the total expected number of occurrences to be small, working against a
 second term that 'wants' to have the maximum rate density at each of the
@@ -62,17 +61,16 @@ know $\gamma_k=\rho({\bf x}_k | \theta)$.  Instead, we have some noisy estimate
 or likelihood for ${\bf x}_k$, which we will call $p_k({\bf x}_k)$. But, we can
 still compute the expected rate $\gamma$ for the $k$th object if we
 *marginalize* over the true value ${\bf x}_k$ by integrating
-$\gamma=\int d{\bf x}_k \, p_k({\bf x}_k) \, \rho({\bf x}_k | \theta)$.
+$\gamma=\int d{\bf x}_k p_k({\bf x}_k) \rho({\bf x}_k | \theta)$.
 It is often convenient to do this integral numerically using $J$ fair samples of
 ${\bf x}_k$ from the distribution $p_k({\bf x}_k)$:
-
-.$$\gamma_k = \int d{\bf x}_k \, p_k({\bf x}_k) \, \rho({\bf x}_k | \theta) \sim \sum_j \rho({\bf x}_{k,j} | \theta)$$
+$$\gamma_k = \int d{\bf x}_k p_k({\bf x}_k) \rho({\bf x}_k | \theta) \sim \sum_j \rho({\bf x}_{k,j} | \theta)$$
 
 This marginalization correctly accounts for the uncertainties on each object via
 a forward model, resulting in a probability for the *error-deconvolved* rate
 density $\rho$. Putting this all together, we get
+$$p(\{{\bf x}_k\}) = e^{-N_\theta}  \prod_{k=1}^K \sum_j \rho({\bf x}_{k,j} | \theta)$$
 
-.$$p(\{{\bf x}_k\}) = e^{-N_\theta} \, \prod_{k=1}^K \sum_j \rho({\bf x}_{k,j} | \theta)$$
 
 I skipped over an important subtlety in the above.  We cannot use just *any*
 distribution for $p_k({\bf x}_k)$. In the marginalization we did, we effectively
