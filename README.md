@@ -46,9 +46,9 @@ A rate density describes the expected (differential) number of occurrences as a
 function of the N-dimensional vector ${\bf x}$.  We denote it $\rho({\bf x} |
 \theta)$ where the parameters $\theta$ describe the shape of the function.  We
 can then ask, given this inhomogenous Poisson process, what is the likelihood of
-observing a particular set of K objects at the values $\{{\bf x}_k\}$?  This is
+observing a particular set of $K$ objects at the values $`\{{\bf x}_k\}`$?  This is
 given by
-$$p(\{{\bf x}_k\}) = e^{-N_\theta} \prod_{k=1}^K \rho({\bf x}_k | \theta)$$
+$$`p(\{{\bf x}_k\}) = e^{-N_\theta} \prod_{k=1}^K \rho({\bf x}_k | \theta)`$$
 
 where $N_\theta = \int d{\bf x} \rho({\bf x} | \theta)$.
 Intuitively, you can kind of think of this as an initial 'parsimony' term that
@@ -78,7 +78,7 @@ used $\rho$ as a *prior* on ${\bf x}$ (and we are allowing that prior to change
 if we change $\theta$).  This suggests that we want to make sure we have already
 removed any prior on ${\bf x}$ that enters in to $p_k$ and are using instead a
 *likelihood* of the data given ${\bf x}_k$.  Furthermore, because we are
-constructing the *product* of all the $\gamma$s, any prior that is already there
+constructing the *product* of all the $\gamma$ 's, any prior that is already there
 will be raised to the $K$th power.
 
 Removing a prior can be done in a number of ways, but one of them is to divide by the prior probability during the marginalization integral (either analytic or numeric).
