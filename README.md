@@ -43,8 +43,8 @@ of the user, see `jof.py` for an example.
 ### Motivation
 
 A rate density describes the expected (differential) number of occurrences as a
-function of the N-dimensional vector ${\bf x}$.  We denote it $\rho({\bf x} |
-\theta)$ where the parameters $\theta$ describe the shape of the function.  We
+function of the N-dimensional vector ${\bf x}$.  We denote it $\rho({\bf x} | \theta)$
+where the parameters $\theta$ describe the shape of the function.  We
 can then ask, given this inhomogenous Poisson process, what is the likelihood of
 observing a particular set of $K$ objects at the values $`\{{\bf x}_k\}`$?  This is
 given by
