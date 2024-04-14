@@ -40,15 +40,16 @@ of the user, see `jof.py` for an example.
 ### Output
 
 
-### Basis
+### Motivation
 
-A rate density describes the expected number of occurrences as a function of the
-N-dimensional vector ${\bf x}$.  We denote it $\rho({\bf x} | \theta)$ where the
-parameters $\theta$ describe the shape of the function.  We can then ask, given
-this inhomogenous Poisson process, what is the likelihood of observing a
-particular set of K objects at the values $\{{\bf x}_k\}$?  This is given by
+A rate density describes the expected (differential) number of occurrences as a
+function of the N-dimensional vector ${\bf x}$.  We denote it $\rho({\bf x} |
+\theta)$ where the parameters $\theta$ describe the shape of the function.  We
+can then ask, given this inhomogenous Poisson process, what is the likelihood of
+observing a particular set of K objects at the values $\{{\bf x}_k\}$?  This is
+given by
 
-$p(\{{\bf x}_k\}) = e^{-N_\theta} \, \prod_{k=1}^K \rho({\bf x}_k | \theta)$
+$$p(\{{\bf x}_k\}) = e^{-N_\theta} \, \prod_{k=1}^K \rho({\bf x}_k | \theta)$$
 
 where $N_\theta = \int d{\bf x} \, \rho({\bf x} | \theta)$.
 Intuitively, you can kind of think of this as an initial 'parsimony' term that
@@ -65,11 +66,13 @@ $\gamma=\int d{\bf x}_k \, p_k({\bf x}_k) \, \rho({\bf x}_k | \theta)$.
 It is often convenient to do this integral numerically using $J$ fair samples of
 ${\bf x}_k$ from the distribution $p_k({\bf x}_k)$:
 
-$\int d{\bf x}_k \, p_k({\bf x}_k) \, \rho({\bf x}_k | \theta) \sim \sum_j \rho({\bf x}_{k,j} | \theta)$
+$$\gamma_k = \int d{\bf x}_k \, p_k({\bf x}_k) \, \rho({\bf x}_k | \theta) \sim \sum_j \rho({\bf x}_{k,j} | \theta)$$
 
-Putting this all together, we get
+This marginalization correctly accounts for the uncertainties on each object via
+a forward model, resulting in a probability for the *error-deconvolved* rate
+density $\rho$. Putting this all together, we get
 
-$p(\{{\bf x}_k\}) = e^{-N_\theta} \, \prod_{k=1}^K \sum_j \rho({\bf x}_{k,j} | \theta)$
+$$p(\{{\bf x}_k\}) = e^{-N_\theta} \, \prod_{k=1}^K \sum_j \rho({\bf x}_{k,j} | \theta)$$
 
 I skipped over an important subtlety in the above.  We cannot use just *any*
 distribution for $p_k({\bf x}_k)$. In the marginalization we did, we effectively
